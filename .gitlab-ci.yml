@@ -1,0 +1,163 @@
+default:
+  interruptible: true
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+stages:
+  - check
+  - build
+  - quality
+  - release
+
+lint:
+  stage: check
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  script:
+    - >
+        nix-shell -I nixpkgs=./pkgs.nix --packages nodejs --run '
+        npm install;
+        npm run lint;
+        '
+
+test:
+  stage: check
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  script:
+    - >
+        nix-shell -I nixpkgs=./pkgs.nix --packages nodejs --run '
+        npm install;
+        npm run test;
+        '
+
+nix-dry:
+  stage: check
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  script:
+    - nix-build -v -v --dry-run ./release.nix --attr application
+    - nix-build -v -v --dry-run ./release.nix --attr docker
+    - nix-build -v -v --dry-run ./release.nix --attr package.linux.x64.elf
+    - nix-build -v -v --dry-run ./release.nix --attr package.windows.x64.exe
+    - nix-build -v -v --dry-run ./release.nix --attr package.macos.x64.macho
+
+nix:
+  stage: build
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  script:
+    - mkdir -p ./builds
+    # nix-specific application target
+    - >
+        build_application="$(nix-build \
+          --max-jobs "$(nproc)" --cores "$(nproc)" \
+          ./release.nix  \
+          --attr application \
+        )"
+    - >
+        nix-store --export $( \
+          nix-store --query --requisites "$build_application" \
+        ) | gzip > ./builds/typescript-demo-lib.closure.gz
+    # non-nix targets
+    - >
+        builds="$(nix-build \
+          --max-jobs "$(nproc)" --cores "$(nproc)" \
+          ./release.nix \
+          --attr docker \
+          --attr package.linux.x64.elf \
+          --attr package.windows.x64.exe \
+          --attr package.macos.x64.macho)"
+    - cp -r $builds ./builds/
+  only:
+    - master
+  artifacts:
+    paths:
+      - ./builds/
+
+application run:
+  stage: quality
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  dependencies:
+    - nix
+  script:
+    - >
+        build_application="$( \
+          gunzip -c ./builds/typescript-demo-lib.closure.gz | \
+          nix-store --import | \
+          tail -1 \
+        )"
+    - $build_application/bin/typescript-demo-lib
+  only:
+    - master
+
+docker run:
+  stage: quality
+  image: docker:20.10.11
+  dependencies:
+    - nix
+  services:
+    - docker:20.10.11-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker info
+  script:
+    - image="$(docker load --input ./builds/*docker* | cut -d' ' -f3)"
+    - docker run "$image"
+  only:
+    - master
+
+linux run:
+  stage: quality
+  image: ubuntu:latest
+  dependencies:
+    - nix
+  script:
+    - for f in ./builds/*-linux-*; do "$f"; done
+  only:
+    - master
+
+windows run:
+  stage: quality
+  dependencies:
+    - nix
+  script:
+    - Get-ChildItem -File ./builds/*-win32-* | ForEach {& $_.FullName}
+  tags:
+    - windows
+  only:
+    - master
+
+# macos is disabled until this repo has access
+# macos run:
+#   stage: quality
+#   image: macos-11-xcode-12
+#   dependencies:
+#     - nix
+#   script:
+#     - for f in ./builds/*-macos-*; do "$f"; done
+#   only:
+#     - master
+#   tags:
+#     - shared-macos-amd64
+
+packages:
+  stage: release
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  dependencies:
+    - nix
+  script:
+    - >
+        nix-shell -I nixpkgs=./pkgs.nix --packages git gitAndTools.gh --run '
+        commit="$(git rev-parse --short HEAD)";
+        gh release \
+          create "$commit" \
+          builds/*.closure.gz \
+          builds/*-linux-* \
+          builds/*-win32-* \
+          builds/*-macos-* \
+          --title "Build-$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+          --prerelease \
+          --notes "" \
+          --repo MatrixAI/TypeScript-Demo-Lib;
+        '
+  only:
+    - master
