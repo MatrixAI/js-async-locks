@@ -23,13 +23,14 @@
   },
   "rules": {
     "linebreak-style": ["error", "unix"],
-    "no-empty": 1,
+    "no-empty": 0,
     "no-undef": 1,
     "no-useless-catch": 1,
     "no-prototype-builtins": 1,
     "no-constant-condition": 0,
     "no-useless-escape": 0,
     "no-console": "error",
+    "require-yield": 0,
     "eqeqeq": ["error", "smart"],
     "capitalized-comments": [
       "warn",
