@@ -1,37 +1,25 @@
 { pkgs ? import ./pkgs.nix {} }:
 
 with pkgs;
-let
-  utils = callPackage ./utils.nix {};
-in
-  pkgs.mkShell {
-    nativeBuildInputs = [
-      nodejs
-      nodePackages.node2nix
-      utils.pkg
-    ];
-    PKG_CACHE_PATH = utils.pkgCachePath;
-    PKG_IGNORE_TAG = 1;
-    shellHook = ''
-      echo 'Entering Typescript-Demo-Lib'
-      set -o allexport
-      . ./.env
-      set +o allexport
-      set -v
+pkgs.mkShell {
+  nativeBuildInputs = [
+    nodejs
+    nodePackages.node2nix
+  ];
+  shellHook = ''
+    echo 'Entering js-async-locks'
+    set -o allexport
+    . ./.env
+    set +o allexport
+    set -v
 
-      export PATH="$(pwd)/dist/bin:$(npm bin):$PATH"
+    # Enables npm link to work
+    export npm_config_prefix=~/.npm
 
-      # pkg is installed in package.json
-      # this ensures that in nix-shell we are using the nix packaged versions
-      export PATH="${lib.makeBinPath
-        [
-          utils.pkg
-        ]
-      }:$PATH"
+    export PATH="$(pwd)/dist/bin:$(npm bin):$PATH"
+    npm install
+    mkdir --parents "$(pwd)/tmp"
 
-      npm install
-      mkdir --parents "$(pwd)/tmp"
-
-      set +v
-    '';
-  }
+    set +v
+  '';
+}
