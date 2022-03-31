@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@matrixai/resources": "^1.0.0",
-    "async-mutex": "^0.3.2"
+    "async-mutex": "^0.3.2",
+    "ts-custom-error": "^3.2.0"
   },
   "devDependencies": {
     "@types/jest": "^27.0.2",

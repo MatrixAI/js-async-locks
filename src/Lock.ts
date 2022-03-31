@@ -1,45 +1,64 @@
 import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
-import { Mutex } from 'async-mutex';
+import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
+import { yieldMicro } from './utils';
+import { ErrorAsyncLocksTimeout } from './errors';
 
 class Lock {
-  protected lock: Mutex = new Mutex();
-  protected release: MutexInterface.Releaser;
+  protected _lock: Mutex = new Mutex();
   protected _count: number = 0;
 
-  public acquire: ResourceAcquire<Lock> = async () => {
-    ++this._count;
-    this.release = await this.lock.acquire();
-    return [
-      async () => {
+  public lock(timeout?: number): ResourceAcquire<Lock> {
+    return async () => {
+      ++this._count;
+      let lock: MutexInterface = this._lock;
+      if (timeout != null) {
+        lock = withTimeout(this._lock, timeout, new ErrorAsyncLocksTimeout());
+      }
+      let release: MutexInterface.Releaser;
+      try {
+        release = await lock.acquire();
+      } catch (e) {
         --this._count;
-        this.release();
-      },
-      this,
-    ];
-  };
+        throw e;
+      }
+      return [
+        async () => {
+          --this._count;
+          release();
+          // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
+          await yieldMicro();
+        },
+        this,
+      ];
+    };
+  }
 
   public get count(): number {
     return this._count;
   }
 
   public isLocked(): boolean {
-    return this.lock.isLocked();
+    return this._lock.isLocked();
   }
 
   public async waitForUnlock(): Promise<void> {
-    return this.lock.waitForUnlock();
+    return this._lock.waitForUnlock();
   }
 
-  public async withF<T>(f: (resources: [Lock]) => Promise<T>): Promise<T> {
-    return withF([this.acquire], f);
+  public async withF<T>(
+    f: (resources: [Lock]) => Promise<T>,
+    timeout?: number,
+  ): Promise<T> {
+    return withF([this.lock(timeout)], f);
   }
 
   public withG<T, TReturn, TNext>(
     g: (resources: [Lock]) => AsyncGenerator<T, TReturn, TNext>,
+    timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.acquire], g);
+    return withG([this.lock(timeout)], g);
   }
 }
 

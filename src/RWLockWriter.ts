@@ -1,7 +1,10 @@
 import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
-import { Mutex } from 'async-mutex';
+import { performance } from 'perf_hooks';
+import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
+import { sleep, yieldMicro } from './utils';
+import { ErrorAsyncLocksTimeout } from './errors';
 
 /**
  * Write-preferring read write lock
@@ -14,42 +17,111 @@ class RWLockWriter {
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
 
-  public acquireRead: ResourceAcquire<RWLockWriter> = async () => {
-    if (this._writerCount > 0) {
-      ++this.readerCountBlocked;
-      await this.writersLock.waitForUnlock();
-      --this.readerCountBlocked;
-    }
-    const readerCount = ++this._readerCount;
-    // The first reader locks
-    if (readerCount === 1) {
-      this.readersRelease = await this.readersLock.acquire();
-    }
-    return [
-      async () => {
-        const readerCount = --this._readerCount;
-        // The last reader unlocks
-        if (readerCount === 0) {
-          this.readersRelease();
+  public read(timeout?: number): ResourceAcquire<RWLockWriter> {
+    return async () => {
+      const t1 = performance.now();
+      if (this._writerCount > 0) {
+        ++this.readerCountBlocked;
+        if (timeout != null) {
+          let timedOut = false;
+          await Promise.race([
+            this.writersLock.waitForUnlock(),
+            sleep(timeout).then(() => {
+              timedOut = true;
+            }),
+          ]);
+          if (timedOut) {
+            --this.readerCountBlocked;
+            throw new ErrorAsyncLocksTimeout();
+          }
+        } else {
+          await this.writersLock.waitForUnlock();
         }
-      },
-      this,
-    ];
-  };
+        --this.readerCountBlocked;
+      }
+      const readerCount = ++this._readerCount;
+      // The first reader locks
+      if (readerCount === 1) {
+        let readersLock: MutexInterface = this.readersLock;
+        if (timeout != null) {
+          timeout = timeout - (performance.now() - t1);
+          readersLock = withTimeout(
+            this.readersLock,
+            timeout,
+            new ErrorAsyncLocksTimeout(),
+          );
+        }
+        try {
+          this.readersRelease = await readersLock.acquire();
+        } catch (e) {
+          --this._readerCount;
+          throw e;
+        }
+      }
+      return [
+        async () => {
+          const readerCount = --this._readerCount;
+          // The last reader unlocks
+          if (readerCount === 0) {
+            this.readersRelease();
+            // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
+            await yieldMicro();
+          }
+        },
+        this,
+      ];
+    };
+  }
 
-  public acquireWrite: ResourceAcquire<RWLockWriter> = async () => {
-    ++this._writerCount;
-    const writersRelease = await this.writersLock.acquire();
-    this.readersRelease = await this.readersLock.acquire();
-    return [
-      async () => {
-        this.readersRelease();
+  public write(timeout?: number): ResourceAcquire<RWLockWriter> {
+    return async () => {
+      ++this._writerCount;
+      let writersLock: MutexInterface = this.writersLock;
+      if (timeout != null) {
+        writersLock = withTimeout(
+          this.writersLock,
+          timeout,
+          new ErrorAsyncLocksTimeout(),
+        );
+      }
+      const t1 = performance.now();
+      let writersRelease: MutexInterface.Releaser;
+      try {
+        writersRelease = await writersLock.acquire();
+      } catch (e) {
+        --this._writerCount;
+        throw e;
+      }
+      let readersLock: MutexInterface = this.readersLock;
+      if (timeout != null) {
+        timeout = timeout - (performance.now() - t1);
+        readersLock = withTimeout(
+          this.readersLock,
+          timeout,
+          new ErrorAsyncLocksTimeout(),
+        );
+      }
+      try {
+        this.readersRelease = await readersLock.acquire();
+      } catch (e) {
         writersRelease();
         --this._writerCount;
-      },
-      this,
-    ];
-  };
+        // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
+        await yieldMicro();
+        throw e;
+      }
+      return [
+        async () => {
+          this.readersRelease();
+          writersRelease();
+          --this._writerCount;
+          // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
+          await yieldMicro();
+        },
+        this,
+      ];
+    };
+  }
 
   public get readerCount(): number {
     return this._readerCount + this.readerCountBlocked;
@@ -73,26 +145,30 @@ class RWLockWriter {
 
   public async withReadF<T>(
     f: (resources: [RWLockWriter]) => Promise<T>,
+    timeout?: number,
   ): Promise<T> {
-    return withF([this.acquireRead], f);
+    return withF([this.read(timeout)], f);
   }
 
   public async withWriteF<T>(
     f: (resources: [RWLockWriter]) => Promise<T>,
+    timeout?: number,
   ): Promise<T> {
-    return withF([this.acquireWrite], f);
+    return withF([this.write(timeout)], f);
   }
 
   public withReadG<T, TReturn, TNext>(
     g: (resources: [RWLockWriter]) => AsyncGenerator<T, TReturn, TNext>,
+    timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.acquireRead], g);
+    return withG([this.read(timeout)], g);
   }
 
   public withWriteG<T, TReturn, TNext>(
     g: (resources: [RWLockWriter]) => AsyncGenerator<T, TReturn, TNext>,
+    timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.acquireWrite], g);
+    return withG([this.write(timeout)], g);
   }
 }
 
