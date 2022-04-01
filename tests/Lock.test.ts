@@ -195,4 +195,21 @@ describe(Lock.name, () => {
     expect(lock.isLocked()).toBe(false);
     expect(lock.count).toBe(0);
   });
+  test('timeout waiting for unlock', async () => {
+    const lock = new Lock();
+    await lock.waitForUnlock(100);
+    await withF([lock.lock()], async ([lock]) => {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await lock.waitForUnlock(100);
+    const g = withG([lock.lock()], async function* ([lock]) {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await g.next();
+    await lock.waitForUnlock(100);
+  });
 });

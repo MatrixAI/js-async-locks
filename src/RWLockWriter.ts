@@ -135,12 +135,27 @@ class RWLockWriter {
     return this.readersLock.isLocked() || this.writersLock.isLocked();
   }
 
-  public async waitForUnlock(): Promise<void> {
-    await Promise.all([
-      this.readersLock.waitForUnlock(),
-      this.writersLock.waitForUnlock(),
-    ]);
-    return;
+  public async waitForUnlock(timeout?: number): Promise<void> {
+    if (timeout != null) {
+      let timedOut = false;
+      await Promise.race([
+        Promise.all([
+          this.readersLock.waitForUnlock(),
+          this.writersLock.waitForUnlock(),
+        ]),
+        sleep(timeout).then(() => {
+          timedOut = true;
+        }),
+      ]);
+      if (timedOut) {
+        throw new ErrorAsyncLocksTimeout();
+      }
+    } else {
+      await Promise.all([
+        this.readersLock.waitForUnlock(),
+        this.writersLock.waitForUnlock(),
+      ]);
+    }
   }
 
   public async withReadF<T>(

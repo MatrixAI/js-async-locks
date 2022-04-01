@@ -442,4 +442,21 @@ describe(RWLockWriter.name, () => {
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
   });
+  test('timeout waiting for unlock', async () => {
+    const lock = new RWLockWriter();
+    await lock.waitForUnlock(100);
+    await withF([lock.read()], async ([lock]) => {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await lock.waitForUnlock(100);
+    const g = withG([lock.write()], async function* ([lock]) {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await g.next();
+    await lock.waitForUnlock(100);
+  });
 });

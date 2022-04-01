@@ -2,7 +2,7 @@ import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
 import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
-import { yieldMicro } from './utils';
+import { sleep, yieldMicro } from './utils';
 import { ErrorAsyncLocksTimeout } from './errors';
 
 class Lock {
@@ -43,8 +43,21 @@ class Lock {
     return this._lock.isLocked();
   }
 
-  public async waitForUnlock(): Promise<void> {
-    return this._lock.waitForUnlock();
+  public async waitForUnlock(timeout?: number): Promise<void> {
+    if (timeout != null) {
+      let timedOut = false;
+      await Promise.race([
+        this._lock.waitForUnlock(),
+        sleep(timeout).then(() => {
+          timedOut = true;
+        }),
+      ]);
+      if (timedOut) {
+        throw new ErrorAsyncLocksTimeout();
+      }
+    } else {
+      await this._lock.waitForUnlock();
+    }
   }
 
   public async withF<T>(
