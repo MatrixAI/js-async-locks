@@ -1,11 +1,12 @@
 import { withF, withG } from '@matrixai/resources';
 import Lock from '@/Lock';
-import * as testUtils from './utils';
+import * as utils from '@/utils';
+import * as errors from '@/errors';
 
 describe(Lock.name, () => {
   test('withF', async () => {
     const lock = new Lock();
-    const p = withF([lock.acquire], async ([lock]) => {
+    const p = withF([lock.lock()], async ([lock]) => {
       expect(lock.isLocked()).toBe(true);
       expect(lock.count).toBe(1);
     });
@@ -17,7 +18,7 @@ describe(Lock.name, () => {
   });
   test('withG', async () => {
     const lock = new Lock();
-    const g1 = withG([lock.acquire], async function* ([lock]): AsyncGenerator<
+    const g1 = withG([lock.lock()], async function* ([lock]): AsyncGenerator<
       string,
       string,
       void
@@ -48,7 +49,7 @@ describe(Lock.name, () => {
     expect(lock.isLocked()).toBe(false);
     expect(lock.count).toBe(0);
     // To actually get the value use while loop or explicit `next()`
-    const g2 = withG([lock.acquire], async function* (): AsyncGenerator<
+    const g2 = withG([lock.lock()], async function* (): AsyncGenerator<
       string,
       string,
       void
@@ -94,9 +95,9 @@ describe(Lock.name, () => {
   test('wait for unlock', async () => {
     const lock = new Lock();
     let value;
-    const p1 = withF([lock.acquire], async () => {
+    const p1 = withF([lock.lock()], async () => {
       value = 'p1';
-      await testUtils.sleep(100);
+      await utils.sleep(100);
     });
     const p2 = lock.waitForUnlock().then(() => {
       value = 'p2';
@@ -123,12 +124,12 @@ describe(Lock.name, () => {
     await Promise.all([
       lock.withF(async () => {
         const value_ = value + 1;
-        await testUtils.sleep(100);
+        await utils.sleep(100);
         value = value_;
       }),
       lock.withF(async () => {
         const value_ = value + 1;
-        await testUtils.sleep(100);
+        await utils.sleep(100);
         value = value_;
       }),
     ]);
@@ -138,7 +139,7 @@ describe(Lock.name, () => {
       (async () => {
         const g = lock.withG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await testUtils.sleep(100);
+          await utils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -148,7 +149,7 @@ describe(Lock.name, () => {
       (async () => {
         const g = lock.withG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await testUtils.sleep(100);
+          await utils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -157,5 +158,58 @@ describe(Lock.name, () => {
       })(),
     ]);
     expect(value).toBe(2);
+  });
+  test('timeout', async () => {
+    const lock = new Lock();
+    await withF([lock.lock(0)], async ([lock]) => {
+      expect(lock.isLocked()).toBe(true);
+      expect(lock.count).toBe(1);
+      const f = jest.fn();
+      await expect(withF([lock.lock(100)], f)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+      expect(f).not.toBeCalled();
+      expect(lock.isLocked()).toBe(true);
+      expect(lock.count).toBe(1);
+    });
+    expect(lock.isLocked()).toBe(false);
+    expect(lock.count).toBe(0);
+    await lock.withF(async () => {
+      const f = jest.fn();
+      await expect(lock.withF(f, 100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+      expect(f).not.toBeCalled();
+    }, 100);
+    const g = lock.withG(async function* () {
+      expect(lock.isLocked()).toBe(true);
+      expect(lock.count).toBe(1);
+      const f = jest.fn();
+      const g = lock.withG(f, 100);
+      await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
+      expect(f).not.toBeCalled();
+      expect(lock.isLocked()).toBe(true);
+      expect(lock.count).toBe(1);
+    }, 100);
+    await g.next();
+    expect(lock.isLocked()).toBe(false);
+    expect(lock.count).toBe(0);
+  });
+  test('timeout waiting for unlock', async () => {
+    const lock = new Lock();
+    await lock.waitForUnlock(100);
+    await withF([lock.lock()], async ([lock]) => {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await lock.waitForUnlock(100);
+    const g = withG([lock.lock()], async function* ([lock]) {
+      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
+    });
+    await g.next();
+    await lock.waitForUnlock(100);
   });
 });
