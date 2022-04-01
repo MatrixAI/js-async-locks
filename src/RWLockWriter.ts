@@ -57,6 +57,9 @@ class RWLockWriter {
           --this._readerCount;
           throw e;
         }
+      } else {
+        // Yield for the first reader to finish locking
+        await yieldMicro();
       }
       return [
         async () => {

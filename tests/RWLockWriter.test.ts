@@ -342,14 +342,12 @@ describe(RWLockWriter.name, () => {
     await p4;
     await p5;
     await p6;
-    // Notice that `read2` happens first
-    // This can chnage if `read2` takes longer to do
     expect(order).toStrictEqual([
-      'read2',
       'read1',
+      'read2',
       'write1',
-      'read4',
       'read3',
+      'read4',
       'write2',
     ]);
   });

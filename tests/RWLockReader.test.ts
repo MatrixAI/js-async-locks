@@ -315,7 +315,7 @@ describe(RWLockReader.name, () => {
     expect(value).toBe(2);
   });
   test('order of operations', async () => {
-    // Write-preferring order
+    // Read-preferring order
     const lock = new RWLockReader();
     const order: Array<string> = [];
     const p1 = lock.withReadF(async () => {
@@ -342,13 +342,11 @@ describe(RWLockReader.name, () => {
     await p4;
     await p5;
     await p6;
-    // Notice that `read2` happens first
-    // This can chnage if `read2` takes longer to do
     expect(order).toStrictEqual([
+      'read1',
       'read2',
       'read3',
       'read4',
-      'read1',
       'write1',
       'write2',
     ]);
