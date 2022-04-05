@@ -1,15 +1,11 @@
-import type { POJO } from './types';
+import { AbstractError } from '@matrixai/errors';
 
-import { CustomError } from 'ts-custom-error';
-
-class ErrorAsyncLocks extends CustomError {
-  data: POJO;
-  constructor(message: string = '', data: POJO = {}) {
-    super(message);
-    this.data = data;
-  }
+class ErrorAsyncLocks<T> extends AbstractError<T> {
+  static description = 'Async locks error';
 }
 
-class ErrorAsyncLocksTimeout extends ErrorAsyncLocks {}
+class ErrorAsyncLocksTimeout<T> extends ErrorAsyncLocks<T> {
+  static description = 'Async lock timeout';
+}
 
 export { ErrorAsyncLocks, ErrorAsyncLocksTimeout };

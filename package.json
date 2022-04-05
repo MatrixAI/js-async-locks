@@ -19,9 +19,9 @@
     "docs": "rm -r ./docs || true; typedoc --gitRevision master --tsconfig ./tsconfig.build.json --out ./docs src && touch ./docs/.nojekyll"
   },
   "dependencies": {
+    "@matrixai/errors": "^1.0.1",
     "@matrixai/resources": "^1.0.0",
-    "async-mutex": "^0.3.2",
-    "ts-custom-error": "^3.2.0"
+    "async-mutex": "^0.3.2"
   },
   "devDependencies": {
     "@types/jest": "^27.0.2",
