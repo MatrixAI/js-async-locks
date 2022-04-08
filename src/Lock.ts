@@ -61,17 +61,17 @@ class Lock {
   }
 
   public async withF<T>(
-    f: (resources: [Lock]) => Promise<T>,
+    f: (lock: Lock) => Promise<T>,
     timeout?: number,
   ): Promise<T> {
-    return withF([this.lock(timeout)], f);
+    return withF([this.lock(timeout)], ([lock]) => f(lock));
   }
 
   public withG<T, TReturn, TNext>(
-    g: (resources: [Lock]) => AsyncGenerator<T, TReturn, TNext>,
+    g: (lock: Lock) => AsyncGenerator<T, TReturn, TNext>,
     timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.lock(timeout)], g);
+    return withG([this.lock(timeout)], ([lock]) => g(lock));
   }
 }
 

@@ -104,31 +104,31 @@ class RWLockReader {
   }
 
   public async withReadF<T>(
-    f: (resources: [RWLockReader]) => Promise<T>,
+    f: (lock: RWLockReader) => Promise<T>,
     timeout?: number,
   ): Promise<T> {
-    return withF([this.read(timeout)], f);
+    return withF([this.read(timeout)], ([lock]) => f(lock));
   }
 
   public async withWriteF<T>(
-    f: (resources: [RWLockReader]) => Promise<T>,
+    f: (lock: RWLockReader) => Promise<T>,
     timeout?: number,
   ): Promise<T> {
-    return withF([this.write(timeout)], f);
+    return withF([this.write(timeout)], ([lock]) => f(lock));
   }
 
   public withReadG<T, TReturn, TNext>(
-    g: (resources: [RWLockReader]) => AsyncGenerator<T, TReturn, TNext>,
+    g: (lock: RWLockReader) => AsyncGenerator<T, TReturn, TNext>,
     timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.read(timeout)], g);
+    return withG([this.read(timeout)], ([lock]) => g(lock));
   }
 
   public withWriteG<T, TReturn, TNext>(
-    g: (resources: [RWLockReader]) => AsyncGenerator<T, TReturn, TNext>,
+    g: (lock: RWLockReader) => AsyncGenerator<T, TReturn, TNext>,
     timeout?: number,
   ): AsyncGenerator<T, TReturn, TNext> {
-    return withG([this.write(timeout)], g);
+    return withG([this.write(timeout)], ([lock]) => g(lock));
   }
 }
 
