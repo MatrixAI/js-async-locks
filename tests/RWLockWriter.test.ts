@@ -382,33 +382,33 @@ describe(RWLockWriter.name, () => {
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     });
-    await lock.withReadF(async () => {
+    await lock.withReadF(100, async () => {
       const f = jest.fn();
-      await expect(lock.withWriteF(f, 100)).rejects.toThrow(
+      await expect(lock.withWriteF(100, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
-    }, 100);
-    await lock.withWriteF(async () => {
+    });
+    await lock.withWriteF(100, async () => {
       const f = jest.fn();
-      await expect(lock.withReadF(f, 100)).rejects.toThrow(
+      await expect(lock.withReadF(100, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
-    }, 100);
-    await lock.withWriteF(async () => {
+    });
+    await lock.withWriteF(100, async () => {
       const f = jest.fn();
-      await expect(lock.withWriteF(f, 100)).rejects.toThrow(
+      await expect(lock.withWriteF(100, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
-    }, 100);
+    });
     const gRead = lock.withReadG(async function* () {
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       const f = jest.fn();
-      const g = lock.withWriteG(f, 100);
+      const g = lock.withWriteG(100, f);
       await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
@@ -421,14 +421,14 @@ describe(RWLockWriter.name, () => {
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       const f1 = jest.fn();
-      const g1 = lock.withReadG(f1, 100);
+      const g1 = lock.withReadG(100, f1);
       await expect(g1.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f1).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       const f2 = jest.fn();
-      const g2 = lock.withWriteG(f2, 100);
+      const g2 = lock.withWriteG(100, f2);
       await expect(g2.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f2).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);

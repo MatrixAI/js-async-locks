@@ -62,16 +62,21 @@ class Lock implements Lockable {
   }
 
   public async withF<T>(
-    f: (lock: Lock) => Promise<T>,
-    timeout?: number,
+    ...params: [...([timeout: number] | []), (lock: Lock) => Promise<T>]
   ): Promise<T> {
+    const f = params.pop() as (lock: Lock) => Promise<T>;
+    const timeout = params[0] as number;
     return withF([this.lock(timeout)], ([lock]) => f(lock));
   }
 
   public withG<T, TReturn, TNext>(
-    g: (lock: Lock) => AsyncGenerator<T, TReturn, TNext>,
-    timeout?: number,
+    ...params: [
+      ...([timeout: number] | []),
+      (lock: Lock) => AsyncGenerator<T, TReturn, TNext>,
+    ]
   ): AsyncGenerator<T, TReturn, TNext> {
+    const g = params.pop() as (lock: Lock) => AsyncGenerator<T, TReturn, TNext>;
+    const timeout = params[0] as number;
     return withG([this.lock(timeout)], ([lock]) => g(lock));
   }
 }

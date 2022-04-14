@@ -178,31 +178,83 @@ class RWLockWriter implements Lockable {
     }
   }
 
-  public async withReadF<T>(
-    f: (lock: RWLockWriter) => Promise<T>,
-    timeout?: number,
+  public async withF<T>(
+    ...params: [
+      ...(
+        | [type: 'read' | 'write', timeout: number]
+        | [type: 'read' | 'write']
+        | []
+      ),
+      (lock: RWLockWriter) => Promise<T>,
+    ]
   ): Promise<T> {
+    const type = params.shift() as 'read' | 'write';
+    switch (type) {
+      case 'read':
+        return this.withReadF(...(params as any));
+      case 'write':
+        return this.withWriteF(...(params as any));
+    }
+  }
+
+  public async withReadF<T>(
+    ...params: [...([timeout: number] | []), (lock: RWLockWriter) => Promise<T>]
+  ): Promise<T> {
+    const f = params.pop() as (lock: RWLockWriter) => Promise<T>;
+    const timeout = params[0] as number;
     return withF([this.read(timeout)], ([lock]) => f(lock));
   }
 
   public async withWriteF<T>(
-    f: (lock: RWLockWriter) => Promise<T>,
-    timeout?: number,
+    ...params: [...([timeout: number] | []), (lock: RWLockWriter) => Promise<T>]
   ): Promise<T> {
+    const f = params.pop() as (lock: RWLockWriter) => Promise<T>;
+    const timeout = params[0] as number;
     return withF([this.write(timeout)], ([lock]) => f(lock));
   }
 
-  public withReadG<T, TReturn, TNext>(
-    g: (lock: RWLockWriter) => AsyncGenerator<T, TReturn, TNext>,
-    timeout?: number,
+  public withG<T, TReturn, TNext>(
+    ...params: [
+      ...(
+        | [type: 'read' | 'write', timeout: number]
+        | [type: 'read' | 'write']
+        | []
+      ),
+      (lock: RWLockWriter) => AsyncGenerator<T, TReturn, TNext>,
+    ]
   ): AsyncGenerator<T, TReturn, TNext> {
+    const type = params.shift() as 'read' | 'write';
+    switch (type) {
+      case 'read':
+        return this.withReadG(...(params as any));
+      case 'write':
+        return this.withWriteG(...(params as any));
+    }
+  }
+
+  public withReadG<T, TReturn, TNext>(
+    ...params: [
+      ...([timeout: number] | []),
+      (lock: RWLockWriter) => AsyncGenerator<T, TReturn, TNext>,
+    ]
+  ): AsyncGenerator<T, TReturn, TNext> {
+    const g = params.pop() as (
+      lock: RWLockWriter,
+    ) => AsyncGenerator<T, TReturn, TNext>;
+    const timeout = params[0] as number;
     return withG([this.read(timeout)], ([lock]) => g(lock));
   }
 
   public withWriteG<T, TReturn, TNext>(
-    g: (lock: RWLockWriter) => AsyncGenerator<T, TReturn, TNext>,
-    timeout?: number,
+    ...params: [
+      ...([timeout: number] | []),
+      (lock: RWLockWriter) => AsyncGenerator<T, TReturn, TNext>,
+    ]
   ): AsyncGenerator<T, TReturn, TNext> {
+    const g = params.pop() as (
+      lock: RWLockWriter,
+    ) => AsyncGenerator<T, TReturn, TNext>;
+    const timeout = params[0] as number;
     return withG([this.write(timeout)], ([lock]) => g(lock));
   }
 }

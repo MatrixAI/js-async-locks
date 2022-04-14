@@ -174,23 +174,23 @@ describe(Lock.name, () => {
     });
     expect(lock.isLocked()).toBe(false);
     expect(lock.count).toBe(0);
-    await lock.withF(async () => {
+    await lock.withF(100, async () => {
       const f = jest.fn();
-      await expect(lock.withF(f, 100)).rejects.toThrow(
+      await expect(lock.withF(100, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
-    }, 100);
-    const g = lock.withG(async function* () {
+    });
+    const g = lock.withG(100, async function* () {
       expect(lock.isLocked()).toBe(true);
       expect(lock.count).toBe(1);
       const f = jest.fn();
-      const g = lock.withG(f, 100);
+      const g = lock.withG(100, f);
       await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
       expect(lock.count).toBe(1);
-    }, 100);
+    });
     await g.next();
     expect(lock.isLocked()).toBe(false);
     expect(lock.count).toBe(0);

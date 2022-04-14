@@ -17,6 +17,10 @@ interface Lockable {
   lock(...params: Array<unknown>): ResourceAcquire<Lockable>;
   isLocked(): boolean;
   waitForUnlock(timeout?: number): Promise<void>;
+  withF<T>(...params: Array<unknown>): Promise<T>;
+  withG<T, TReturn, TNext>(
+    ...params: Array<unknown>
+  ): AsyncGenerator<T, TReturn, TNext>;
 }
 
 export type { POJO, ToString, Lockable };
