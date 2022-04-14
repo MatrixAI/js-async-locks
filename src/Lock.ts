@@ -1,11 +1,12 @@
 import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
+import type { Lockable } from './types';
 import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
 import { sleep, yieldMicro } from './utils';
 import { ErrorAsyncLocksTimeout } from './errors';
 
-class Lock {
+class Lock implements Lockable {
   protected _lock: Mutex = new Mutex();
   protected _count: number = 0;
 

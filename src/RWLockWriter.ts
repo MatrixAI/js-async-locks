@@ -1,5 +1,6 @@
 import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
+import type { Lockable } from './types';
 import { performance } from 'perf_hooks';
 import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
@@ -9,13 +10,25 @@ import { ErrorAsyncLocksTimeout } from './errors';
 /**
  * Write-preferring read write lock
  */
-class RWLockWriter {
+class RWLockWriter implements Lockable {
   protected readersLock: Mutex = new Mutex();
   protected writersLock: Mutex = new Mutex();
   protected readersRelease: MutexInterface.Releaser;
   protected readerCountBlocked: number = 0;
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
+
+  public lock(
+    type: 'read' | 'write',
+    timeout?: number,
+  ): ResourceAcquire<RWLockWriter> {
+    switch (type) {
+      case 'read':
+        return this.read(timeout);
+      case 'write':
+        return this.write(timeout);
+    }
+  }
 
   public read(timeout?: number): ResourceAcquire<RWLockWriter> {
     return async () => {
@@ -124,6 +137,10 @@ class RWLockWriter {
         this,
       ];
     };
+  }
+
+  public get count(): number {
+    return this.readerCount + this.writerCount;
   }
 
   public get readerCount(): number {

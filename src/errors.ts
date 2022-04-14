@@ -5,7 +5,16 @@ class ErrorAsyncLocks<T> extends AbstractError<T> {
 }
 
 class ErrorAsyncLocksTimeout<T> extends ErrorAsyncLocks<T> {
-  static description = 'Async lock timeout';
+  static description = 'Async locks timeout';
 }
 
-export { ErrorAsyncLocks, ErrorAsyncLocksTimeout };
+class ErrorAsyncLocksLockBoxConflict<T> extends ErrorAsyncLocks<T> {
+  static description =
+    'LockBox cannot lock same ID with different Lockable classes';
+}
+
+export {
+  ErrorAsyncLocks,
+  ErrorAsyncLocksTimeout,
+  ErrorAsyncLocksLockBoxConflict,
+};

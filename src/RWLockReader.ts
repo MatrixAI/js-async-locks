@@ -1,5 +1,6 @@
 import type { MutexInterface } from 'async-mutex';
 import type { ResourceAcquire } from '@matrixai/resources';
+import type { Lockable } from './types';
 import { Mutex, withTimeout } from 'async-mutex';
 import { withF, withG } from '@matrixai/resources';
 import { sleep, yieldMicro } from './utils';
@@ -8,20 +9,32 @@ import { ErrorAsyncLocksTimeout } from './errors';
 /**
  * Read-preferring read write lock
  */
-class RWLockReader {
+class RWLockReader implements Lockable {
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
-  protected lock: Mutex = new Mutex();
+  protected _lock: Mutex = new Mutex();
   protected release: MutexInterface.Releaser;
+
+  public lock(
+    type: 'read' | 'write',
+    timeout?: number,
+  ): ResourceAcquire<RWLockReader> {
+    switch (type) {
+      case 'read':
+        return this.read(timeout);
+      case 'write':
+        return this.write(timeout);
+    }
+  }
 
   public read(timeout?: number): ResourceAcquire<RWLockReader> {
     return async () => {
       const readerCount = ++this._readerCount;
       // The first reader locks
       if (readerCount === 1) {
-        let lock: MutexInterface = this.lock;
+        let lock: MutexInterface = this._lock;
         if (timeout != null) {
-          lock = withTimeout(this.lock, timeout, new ErrorAsyncLocksTimeout());
+          lock = withTimeout(this._lock, timeout, new ErrorAsyncLocksTimeout());
         }
         try {
           this.release = await lock.acquire();
@@ -51,9 +64,9 @@ class RWLockReader {
   public write(timeout?: number): ResourceAcquire<RWLockReader> {
     return async () => {
       ++this._writerCount;
-      let lock: MutexInterface = this.lock;
+      let lock: MutexInterface = this._lock;
       if (timeout != null) {
-        lock = withTimeout(this.lock, timeout, new ErrorAsyncLocksTimeout());
+        lock = withTimeout(this._lock, timeout, new ErrorAsyncLocksTimeout());
       }
       let release: MutexInterface.Releaser;
       try {
@@ -74,6 +87,10 @@ class RWLockReader {
     };
   }
 
+  public get count(): number {
+    return this.readerCount + this.writerCount;
+  }
+
   public get readerCount(): number {
     return this._readerCount;
   }
@@ -83,14 +100,14 @@ class RWLockReader {
   }
 
   public isLocked(): boolean {
-    return this.lock.isLocked();
+    return this._lock.isLocked();
   }
 
   public async waitForUnlock(timeout?: number): Promise<void> {
     if (timeout != null) {
       let timedOut = false;
       await Promise.race([
-        this.lock.waitForUnlock(),
+        this._lock.waitForUnlock(),
         sleep(timeout).then(() => {
           timedOut = true;
         }),
@@ -99,7 +116,7 @@ class RWLockReader {
         throw new ErrorAsyncLocksTimeout();
       }
     } else {
-      await this.lock.waitForUnlock();
+      await this._lock.waitForUnlock();
     }
   }
 
