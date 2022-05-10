@@ -11,6 +11,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "prepare": "tsc -p ./tsconfig.build.json",
     "build": "rm -r ./dist || true; tsc -p ./tsconfig.build.json",
     "ts-node": "ts-node -r tsconfig-paths/register",
     "test": "jest",
