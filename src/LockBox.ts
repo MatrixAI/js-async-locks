@@ -6,7 +6,7 @@ import { ErrorAsyncLocksLockBoxConflict } from './errors';
 type LockRequest<L extends Lockable> = [
   key: ToString,
   lockConstructor: new () => L,
-  ...lockingParams: Parameters<L['lock']>
+  ...lockingParams: Parameters<L['lock']>,
 ];
 
 class LockBox<L extends Lockable> implements Lockable {
