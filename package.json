@@ -20,8 +20,8 @@
     "docs": "rm -r ./docs || true; typedoc --gitRevision master --tsconfig ./tsconfig.build.json --out ./docs src"
   },
   "dependencies": {
-    "@matrixai/errors": "^1.1.0",
-    "@matrixai/resources": "^1.0.0",
+    "@matrixai/errors": "^1.1.1",
+    "@matrixai/resources": "^1.1.2",
     "async-mutex": "^0.3.2"
   },
   "devDependencies": {
@@ -39,7 +39,6 @@
     "ts-node": "^10.4.0",
     "tsconfig-paths": "^3.9.0",
     "typedoc": "^0.22.15",
-    "typescript": "^4.5.2",
-    "typescript-cached-transpile": "0.0.6"
+    "typescript": "^4.5.2"
   }
 }
