@@ -1,13 +1,7 @@
 import type { ResourceAcquire, ResourceRelease } from '@matrixai/resources';
-import type { Lockable, ToString } from './types';
+import type { Lockable, ToString, LockRequest } from './types';
 import { withF, withG } from '@matrixai/resources';
 import { ErrorAsyncLocksLockBoxConflict } from './errors';
-
-type LockRequest<L extends Lockable> = [
-  key: ToString,
-  lockConstructor: new () => L,
-  ...lockingParams: Parameters<L['lock']>,
-];
 
 class LockBox<L extends Lockable> implements Lockable {
   protected _locks: Map<string, L> = new Map();
