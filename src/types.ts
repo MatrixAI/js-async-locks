@@ -23,4 +23,10 @@ interface Lockable {
   ): AsyncGenerator<T, TReturn, TNext>;
 }
 
-export type { POJO, ToString, Lockable };
+type LockRequest<L extends Lockable = Lockable> = [
+  key: ToString,
+  lockConstructor: new () => L,
+  ...lockingParams: Parameters<L['lock']>,
+];
+
+export type { POJO, ToString, Lockable, LockRequest };

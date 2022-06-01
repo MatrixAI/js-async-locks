@@ -1,3 +1,4 @@
+import type { LockRequest } from '@/types';
 import { withF, withG } from '@matrixai/resources';
 import LockBox from '@/LockBox';
 import Lock from '@/Lock';
@@ -333,5 +334,17 @@ describe(LockBox.name, () => {
       })(),
     ]);
     expect(value).toBe(2);
+  });
+  test('can map keys to LockBox locks', async () => {
+    const lockBox = new LockBox();
+    const keys = ['1', '2', '3', '4'];
+    const locks: Array<LockRequest<RWLockWriter>> = keys.map((key) => [
+      key,
+      RWLockWriter,
+      'write',
+    ]);
+    await lockBox.withF(...locks, async () => {
+      // NOP
+    });
   });
 });
