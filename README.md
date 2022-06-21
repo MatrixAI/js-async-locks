@@ -1,6 +1,7 @@
 # js-async-locks
 
-[![pipeline status](https://gitlab.com/MatrixAI/open-source/js-async-locks/badges/master/pipeline.svg)](https://gitlab.com/MatrixAI/open-source/js-async-locks/commits/master)
+staging:[![pipeline status](https://gitlab.com/MatrixAI/open-source/js-async-locks/badges/staging/pipeline.svg)](https://gitlab.com/MatrixAI/open-source/js-async-locks/commits/staging)
+master:[![pipeline status](https://gitlab.com/MatrixAI/open-source/js-async-locks/badges/master/pipeline.svg)](https://gitlab.com/MatrixAI/open-source/js-async-locks/commits/master)
 
 Asynchronous lock utilities.
 
