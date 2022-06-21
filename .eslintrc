@@ -50,6 +50,11 @@
         "ignoreConsecutiveComments": true
       }
     ],
+    "curly": [
+      "error",
+      "multi-line",
+      "consistent"
+    ],
     "import/order": [
       "error",
       {
@@ -111,6 +116,12 @@
       {
         "selector": "default",
         "format": ["camelCase"],
+        "leadingUnderscore": "allow",
+        "trailingUnderscore": "allowSingleOrDouble"
+      },
+      {
+        "selector": "function",
+        "format": ["camelCase", "PascalCase"],
         "leadingUnderscore": "allow",
         "trailingUnderscore": "allowSingleOrDouble"
       },

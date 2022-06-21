@@ -1,7 +1,7 @@
 { pkgs ? import ./pkgs.nix {} }:
 
 with pkgs;
-pkgs.mkShell {
+mkShell {
   nativeBuildInputs = [
     nodejs
     nodePackages.node2nix
@@ -21,7 +21,7 @@ pkgs.mkShell {
     # Enables npm link
     export npm_config_prefix=~/.npm
 
-    npm install
+    npm install --ignore-scripts
 
     set +v
   '';
