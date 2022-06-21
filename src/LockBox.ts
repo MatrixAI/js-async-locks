@@ -84,16 +84,19 @@ class LockBox<L extends Lockable> implements Lockable {
     return count;
   }
 
-  public isLocked(key?: ToString): boolean {
+  public isLocked(
+    key?: ToString,
+    ...params: Parameters<L['isLocked']>
+  ): boolean {
     if (key == null) {
       for (const lock of this._locks.values()) {
-        if (lock.isLocked()) return true;
+        if (lock.isLocked(...params)) return true;
       }
       return false;
     } else {
       const lock = this._locks.get(key.toString());
       if (lock == null) return false;
-      return lock.isLocked();
+      return lock.isLocked(...params);
     }
   }
 

@@ -10,10 +10,13 @@ import { ErrorAsyncLocksTimeout } from './errors';
  * Read-preferring read write lock
  */
 class RWLockReader implements Lockable {
+  protected readersLock: Mutex = new Mutex();
+  protected writersLock: Mutex = new Mutex();
+  protected writersRelease: MutexInterface.Releaser;
+  protected readerCountBlocked: number = 0;
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
-  protected _lock: Mutex = new Mutex();
-  protected release: MutexInterface.Releaser;
+  protected activeLock: 'read' | 'write' | null = null;
 
   public lock(
     type: 'read' | 'write',
@@ -29,30 +32,61 @@ class RWLockReader implements Lockable {
 
   public read(timeout?: number): ResourceAcquire<RWLockReader> {
     return async () => {
+      const t1 = performance.now();
+      ++this.readerCountBlocked;
+      let readersLock: MutexInterface = this.readersLock;
+      if (timeout != null) {
+        readersLock = withTimeout(
+          this.readersLock,
+          timeout,
+          new ErrorAsyncLocksTimeout(),
+        );
+      }
+      let readersRelease: MutexInterface.Releaser;
+      try {
+        readersRelease = await readersLock.acquire();
+      } catch (e) {
+        --this.readerCountBlocked;
+        throw e;
+      }
+      --this.readerCountBlocked;
       const readerCount = ++this._readerCount;
       // The first reader locks
       if (readerCount === 1) {
-        let lock: MutexInterface = this._lock;
+        let writersLock: MutexInterface = this.writersLock;
         if (timeout != null) {
-          lock = withTimeout(this._lock, timeout, new ErrorAsyncLocksTimeout());
+          timeout = timeout - (performance.now() - t1);
+          writersLock = withTimeout(
+            this.writersLock,
+            timeout,
+            new ErrorAsyncLocksTimeout(),
+          );
         }
         try {
-          this.release = await lock.acquire();
+          this.writersRelease = await writersLock.acquire();
         } catch (e) {
+          readersRelease();
           --this._readerCount;
           throw e;
         }
+        readersRelease();
+        this.activeLock = 'read';
       } else {
+        readersRelease();
+        this.activeLock = 'read';
         // Yield for the first reader to finish locking
         await yieldMicro();
       }
       return [
         async () => {
+          readersRelease = await this.readersLock.acquire();
           const readerCount = --this._readerCount;
           // The last reader unlocks
           if (readerCount === 0) {
-            this.release();
+            this.writersRelease();
           }
+          readersRelease();
+          this.activeLock = null;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
           await yieldMicro();
         },
@@ -64,21 +98,27 @@ class RWLockReader implements Lockable {
   public write(timeout?: number): ResourceAcquire<RWLockReader> {
     return async () => {
       ++this._writerCount;
-      let lock: MutexInterface = this._lock;
+      let writersLock: MutexInterface = this.writersLock;
       if (timeout != null) {
-        lock = withTimeout(this._lock, timeout, new ErrorAsyncLocksTimeout());
+        writersLock = withTimeout(
+          this.writersLock,
+          timeout,
+          new ErrorAsyncLocksTimeout(),
+        );
       }
       let release: MutexInterface.Releaser;
       try {
-        release = await lock.acquire();
+        release = await writersLock.acquire();
       } catch (e) {
         --this._writerCount;
         throw e;
       }
+      this.activeLock = 'write';
       return [
         async () => {
           release();
           --this._writerCount;
+          this.activeLock = null;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
           await yieldMicro();
         },
@@ -92,22 +132,36 @@ class RWLockReader implements Lockable {
   }
 
   public get readerCount(): number {
-    return this._readerCount;
+    return this._readerCount + this.readerCountBlocked;
   }
 
   public get writerCount(): number {
     return this._writerCount;
   }
 
-  public isLocked(): boolean {
-    return this._lock.isLocked();
+  /**
+   * Check if locked
+   * If passed `type`, it will also check that the active lock is of that type
+   */
+  public isLocked(type?: 'read' | 'write'): boolean {
+    if (type != null) {
+      return (
+        this.activeLock === type &&
+        (this.readersLock.isLocked() || this.writersLock.isLocked())
+      );
+    } else {
+      return this.readersLock.isLocked() || this.writersLock.isLocked();
+    }
   }
 
   public async waitForUnlock(timeout?: number): Promise<void> {
     if (timeout != null) {
       let timedOut = false;
       await Promise.race([
-        this._lock.waitForUnlock(),
+        Promise.all([
+          this.readersLock.waitForUnlock(),
+          this.writersLock.waitForUnlock(),
+        ]),
         sleep(timeout).then(() => {
           timedOut = true;
         }),
@@ -116,7 +170,10 @@ class RWLockReader implements Lockable {
         throw new ErrorAsyncLocksTimeout();
       }
     } else {
-      await this._lock.waitForUnlock();
+      await Promise.all([
+        this.readersLock.waitForUnlock(),
+        this.writersLock.waitForUnlock(),
+      ]);
     }
   }
 

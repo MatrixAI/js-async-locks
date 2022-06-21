@@ -17,6 +17,7 @@ class RWLockWriter implements Lockable {
   protected readerCountBlocked: number = 0;
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
+  protected activeLock: 'read' | 'write' | null = null;
 
   public lock(
     type: 'read' | 'write',
@@ -70,7 +71,9 @@ class RWLockWriter implements Lockable {
           --this._readerCount;
           throw e;
         }
+        this.activeLock = 'read';
       } else {
+        this.activeLock = 'read';
         // Yield for the first reader to finish locking
         await yieldMicro();
       }
@@ -80,6 +83,7 @@ class RWLockWriter implements Lockable {
           // The last reader unlocks
           if (readerCount === 0) {
             this.readersRelease();
+            this.activeLock = null;
             // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
             await yieldMicro();
           }
@@ -126,11 +130,13 @@ class RWLockWriter implements Lockable {
         await yieldMicro();
         throw e;
       }
+      this.activeLock = 'write';
       return [
         async () => {
           this.readersRelease();
           writersRelease();
           --this._writerCount;
+          this.activeLock = null;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
           await yieldMicro();
         },
@@ -151,8 +157,19 @@ class RWLockWriter implements Lockable {
     return this._writerCount;
   }
 
-  public isLocked(): boolean {
-    return this.readersLock.isLocked() || this.writersLock.isLocked();
+  /**
+   * Check if locked
+   * If passed `type`, it will also check that the active lock is of that type
+   */
+  public isLocked(type?: 'read' | 'write'): boolean {
+    if (type != null) {
+      return (
+        this.activeLock === type &&
+        (this.readersLock.isLocked() || this.writersLock.isLocked())
+      );
+    } else {
+      return this.readersLock.isLocked() || this.writersLock.isLocked();
+    }
   }
 
   public async waitForUnlock(timeout?: number): Promise<void> {
