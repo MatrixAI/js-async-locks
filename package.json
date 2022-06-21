@@ -1,6 +1,6 @@
 {
   "name": "@matrixai/async-locks",
-  "version": "2.2.5",
+  "version": "2.3.0",
   "author": "Roger Qiu",
   "description": "Asynchronous locking utilities",
   "license": "Apache-2.0",
