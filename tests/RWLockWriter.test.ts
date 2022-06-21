@@ -7,7 +7,7 @@ describe(RWLockWriter.name, () => {
   test('withF', async () => {
     const lock = new RWLockWriter();
     const p1 = withF([lock.read()], async ([lock]) => {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
     });
@@ -19,7 +19,7 @@ describe(RWLockWriter.name, () => {
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
     const p2 = withF([lock.write()], async ([lock]) => {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     });
@@ -38,22 +38,22 @@ describe(RWLockWriter.name, () => {
       string,
       void
     > {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       yield 'first';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       yield 'second';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       return 'last';
     });
     for await (const _ of g1) {
       // It should be locked during iteration
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
     }
@@ -113,22 +113,22 @@ describe(RWLockWriter.name, () => {
       string,
       void
     > {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       yield 'first';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       yield 'second';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       return 'last';
     });
     for await (const _ of g1) {
       // It should be locked during iteration
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     }
@@ -171,6 +171,25 @@ describe(RWLockWriter.name, () => {
     expect(lock.isLocked()).toBe(false);
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
+  });
+  test('readers are blocked after writer', async () => {
+    const lock = new RWLockWriter();
+    const lockWriter = lock.write();
+    const [lockWriterRelease] = await lockWriter();
+    const results = await Promise.allSettled([
+      lock.read(100)(),
+      lock.read(100)(),
+      lock.read(150)(),
+      lock.read(150)(),
+    ]);
+    expect(
+      results.every(
+        (r) =>
+          r.status === 'rejected' &&
+          r.reason instanceof errors.ErrorAsyncLocksTimeout,
+      ),
+    ).toBe(true);
+    await lockWriterRelease();
   });
   test('lock count', async () => {
     const lock = new RWLockWriter();

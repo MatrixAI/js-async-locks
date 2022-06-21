@@ -7,7 +7,7 @@ describe(RWLockReader.name, () => {
   test('withF', async () => {
     const lock = new RWLockReader();
     const p1 = withF([lock.read()], async ([lock]) => {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
     });
@@ -19,7 +19,7 @@ describe(RWLockReader.name, () => {
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
     const p2 = withF([lock.write()], async ([lock]) => {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     });
@@ -38,22 +38,22 @@ describe(RWLockReader.name, () => {
       string,
       void
     > {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       yield 'first';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       yield 'second';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       return 'last';
     });
     for await (const _ of g1) {
       // It should be locked during iteration
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('read')).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
     }
@@ -113,22 +113,22 @@ describe(RWLockReader.name, () => {
       string,
       void
     > {
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       yield 'first';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       yield 'second';
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       return 'last';
     });
     for await (const _ of g1) {
       // It should be locked during iteration
-      expect(lock.isLocked()).toBe(true);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     }
@@ -171,6 +171,25 @@ describe(RWLockReader.name, () => {
     expect(lock.isLocked()).toBe(false);
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
+  });
+  test('readers are blocked after writer', async () => {
+    const lock = new RWLockReader();
+    const lockWriter = lock.write();
+    const [lockWriterRelease] = await lockWriter();
+    const results = await Promise.allSettled([
+      lock.read(100)(),
+      lock.read(100)(),
+      lock.read(150)(),
+      lock.read(150)(),
+    ]);
+    expect(
+      results.every(
+        (r) =>
+          r.status === 'rejected' &&
+          r.reason instanceof errors.ErrorAsyncLocksTimeout,
+      ),
+    ).toBe(true);
+    await lockWriterRelease();
   });
   test('lock count', async () => {
     const lock = new RWLockReader();
@@ -318,14 +337,20 @@ describe(RWLockReader.name, () => {
     // Read-preferring order
     const lock = new RWLockReader();
     const order: Array<string> = [];
+    const [lockReaderRelease] = await lock.read()();
+    order.push('read0');
+    const p3 = lock.withWriteF(async () => {
+      order.push('write1');
+    });
+    const p6 = lock.withWriteF(async () => {
+      order.push('write2');
+    });
+    await utils.sleep(0);
     const p1 = lock.withReadF(async () => {
       order.push('read1');
     });
     const p2 = lock.withReadF(async () => {
       order.push('read2');
-    });
-    const p3 = lock.withWriteF(async () => {
-      order.push('write1');
     });
     const p4 = lock.withReadF(async () => {
       order.push('read3');
@@ -333,9 +358,7 @@ describe(RWLockReader.name, () => {
     const p5 = lock.withReadF(async () => {
       order.push('read4');
     });
-    const p6 = lock.withWriteF(async () => {
-      order.push('write2');
-    });
+    await lockReaderRelease();
     await p1;
     await p2;
     await p3;
@@ -343,6 +366,7 @@ describe(RWLockReader.name, () => {
     await p5;
     await p6;
     expect(order).toStrictEqual([
+      'read0',
       'read1',
       'read2',
       'read3',

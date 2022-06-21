@@ -15,7 +15,7 @@ interface ToString {
 interface Lockable {
   count: number;
   lock(...params: Array<unknown>): ResourceAcquire<Lockable>;
-  isLocked(): boolean;
+  isLocked(...params: Array<unknown>): boolean;
   waitForUnlock(timeout?: number): Promise<void>;
   withF<T>(...params: Array<unknown>): Promise<T>;
   withG<T, TReturn, TNext>(
