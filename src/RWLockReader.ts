@@ -16,7 +16,6 @@ class RWLockReader implements Lockable {
   protected readerCountBlocked: number = 0;
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
-  protected activeLock: 'read' | 'write' | null = null;
 
   public lock(
     type: 'read' | 'write',
@@ -70,10 +69,8 @@ class RWLockReader implements Lockable {
           throw e;
         }
         readersRelease();
-        this.activeLock = 'read';
       } else {
         readersRelease();
-        this.activeLock = 'read';
         // Yield for the first reader to finish locking
         await yieldMicro();
       }
@@ -86,7 +83,6 @@ class RWLockReader implements Lockable {
             this.writersRelease();
           }
           readersRelease();
-          this.activeLock = null;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
           await yieldMicro();
         },
@@ -113,12 +109,10 @@ class RWLockReader implements Lockable {
         --this._writerCount;
         throw e;
       }
-      this.activeLock = 'write';
       return [
         async () => {
           release();
           --this._writerCount;
-          this.activeLock = null;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
           await yieldMicro();
         },
@@ -143,15 +137,8 @@ class RWLockReader implements Lockable {
    * Check if locked
    * If passed `type`, it will also check that the active lock is of that type
    */
-  public isLocked(type?: 'read' | 'write'): boolean {
-    if (type != null) {
-      return (
-        this.activeLock === type &&
-        (this.readersLock.isLocked() || this.writersLock.isLocked())
-      );
-    } else {
-      return this.readersLock.isLocked() || this.writersLock.isLocked();
-    }
+  public isLocked(): boolean {
+    return this.readersLock.isLocked() || this.writersLock.isLocked();
   }
 
   public async waitForUnlock(timeout?: number): Promise<void> {
