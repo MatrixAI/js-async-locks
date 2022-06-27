@@ -3,7 +3,7 @@ import type { Lockable, ToString, LockRequest } from './types';
 import { withF, withG } from '@matrixai/resources';
 import { ErrorAsyncLocksLockBoxConflict } from './errors';
 
-class LockBox<L extends Lockable> implements Lockable {
+class LockBox<L extends Lockable = Lockable> implements Lockable {
   protected _locks: Map<string, L> = new Map();
 
   public lock(...requests: Array<LockRequest<L>>): ResourceAcquire<LockBox<L>> {
