@@ -347,4 +347,17 @@ describe(LockBox.name, () => {
       // NOP
     });
   });
+  test('release is idempotent', async () => {
+    const lockBox = new LockBox();
+    let lockAcquire = lockBox.lock(['1', Lock], ['2', Lock]);
+    let [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lockBox.count).toBe(0);
+    lockAcquire = lockBox.lock(['2', Lock], ['3', Lock]);
+    [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lockBox.count).toBe(0);
+  });
 });

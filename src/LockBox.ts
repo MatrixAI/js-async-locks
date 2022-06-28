@@ -56,8 +56,11 @@ class LockBox<L extends Lockable = Lockable> implements Lockable {
         }
         locks.push([key, lockRelease, lock]);
       }
+      let released = false;
       return [
         async () => {
+          if (released) return;
+          released = true;
           // Release all locks in reverse order
           locks.reverse();
           for (const [key, lockRelease, lock] of locks) {
