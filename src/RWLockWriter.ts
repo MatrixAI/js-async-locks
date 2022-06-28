@@ -19,7 +19,7 @@ class RWLockWriter implements Lockable {
   protected _writerCount: number = 0;
 
   public lock(
-    type: 'read' | 'write',
+    type: 'read' | 'write' = 'write',
     timeout?: number,
   ): ResourceAcquire<RWLockWriter> {
     switch (type) {

@@ -18,7 +18,7 @@ class RWLockReader implements Lockable {
   protected _writerCount: number = 0;
 
   public lock(
-    type: 'read' | 'write',
+    type: 'read' | 'write' = 'write',
     timeout?: number,
   ): ResourceAcquire<RWLockReader> {
     switch (type) {
@@ -74,7 +74,7 @@ class RWLockReader implements Lockable {
         // Yield for the first reader to finish locking
         await yieldMicro();
       }
-      let released= false;
+      let released = false;
       return [
         async () => {
           if (released) return;

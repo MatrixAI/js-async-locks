@@ -23,10 +23,29 @@ interface Lockable {
   ): AsyncGenerator<T, TReturn, TNext>;
 }
 
-type LockRequest<L extends Lockable = Lockable> = [
+type MultiLockRequest<L extends Lockable = Lockable> = [
   key: ToString,
   lockConstructor: new () => L,
   ...lockingParams: Parameters<L['lock']>,
 ];
 
-export type { POJO, ToString, Lockable, LockRequest };
+type MultiLockAcquire<L extends Lockable = Lockable> = [
+  key: ToString,
+  lockAcquire: ResourceAcquire<L>,
+  ...lockingParams: Parameters<L['lock']>,
+];
+
+type MultiLockAcquired<L extends Lockable = Lockable> = [
+  key: ToString,
+  lock: L,
+  ...lockingParams: Parameters<L['lock']>,
+];
+
+export type {
+  POJO,
+  ToString,
+  Lockable,
+  MultiLockRequest,
+  MultiLockAcquire,
+  MultiLockAcquired,
+};

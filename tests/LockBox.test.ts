@@ -1,4 +1,5 @@
-import type { LockRequest } from '@/types';
+import type { ResourceRelease } from '@matrixai/resources';
+import type { MultiLockRequest } from '@/types';
 import { withF, withG } from '@matrixai/resources';
 import LockBox from '@/LockBox';
 import Lock from '@/Lock';
@@ -338,7 +339,7 @@ describe(LockBox.name, () => {
   test('can map keys to LockBox locks', async () => {
     const lockBox = new LockBox();
     const keys = ['1', '2', '3', '4'];
-    const locks: Array<LockRequest<RWLockWriter>> = keys.map((key) => [
+    const locks: Array<MultiLockRequest<RWLockWriter>> = keys.map((key) => [
       key,
       RWLockWriter,
       'write',
@@ -359,5 +360,62 @@ describe(LockBox.name, () => {
     await lockRelease();
     await lockRelease();
     expect(lockBox.count).toBe(0);
+  });
+  test('lockMulti provides fine grained lock acquisitions', async () => {
+    const lockBox = new LockBox();
+    const lockAcquires = lockBox.lockMulti(['1', Lock], ['2', Lock]);
+    // Returned multi lock acquires should be sorted
+    expect(lockAcquires.map(([key]) => key)).toStrictEqual(['1', '2'].sort());
+    const lockReleasers: Map<string, ResourceRelease> = new Map();
+    for (const [key, lockAcquire] of lockAcquires) {
+      const [lockRelease] = await lockAcquire();
+      lockReleasers.set(key as string, lockRelease);
+    }
+    // Unlock '1'
+    await lockReleasers.get('1')!();
+    // Lock releasing is idempotent
+    await lockReleasers.get('1')!();
+    expect(lockBox.isLocked('1')).toBe(false);
+    expect(lockBox.isLocked('2')).toBe(true);
+    await lockBox.withF(['1', Lock], async () => {
+      expect(lockBox.isLocked('1')).toBe(true);
+      expect(lockBox.isLocked('2')).toBe(true);
+    });
+    expect(lockBox.isLocked('1')).toBe(false);
+    expect(lockBox.isLocked('2')).toBe(true);
+    // Unlock '2'
+    await lockReleasers.get('2')!();
+    await lockBox.withMultiF(['1', Lock], ['2', Lock], async (multiLocks) => {
+      expect(lockBox.isLocked('1')).toBe(true);
+      expect(lockBox.isLocked('2')).toBe(true);
+      const [[k1, l1], [k2, l2]] = multiLocks;
+      expect(k1).toBe('1');
+      expect(k2).toBe('2');
+      expect(l1.isLocked()).toBe(true);
+      expect(l2.isLocked()).toBe(true);
+    });
+    const g = lockBox.withMultiG(
+      ['1', Lock],
+      ['2', Lock],
+      async function* (multiLocks): AsyncGenerator<string, string, void> {
+        yield 'first';
+        expect(lockBox.isLocked('1')).toBe(true);
+        expect(lockBox.isLocked('2')).toBe(true);
+        const [[k1, l1], [k2, l2]] = multiLocks;
+        yield 'second';
+        expect(k1).toBe('1');
+        expect(k2).toBe('2');
+        expect(l1.isLocked()).toBe(true);
+        expect(l2.isLocked()).toBe(true);
+        return 'last';
+      },
+    );
+    const vv: Array<string> = [];
+    for await (const v of g) {
+      vv.push(v);
+    }
+    expect(vv).toStrictEqual(['first', 'second']);
+    expect(lockBox.isLocked('1')).toBe(false);
+    expect(lockBox.isLocked('2')).toBe(false);
   });
 });
