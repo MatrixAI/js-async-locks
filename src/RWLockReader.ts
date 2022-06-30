@@ -18,7 +18,7 @@ class RWLockReader implements Lockable {
   protected _writerCount: number = 0;
 
   public lock(
-    type: 'read' | 'write',
+    type: 'read' | 'write' = 'write',
     timeout?: number,
   ): ResourceAcquire<RWLockReader> {
     switch (type) {
@@ -74,8 +74,11 @@ class RWLockReader implements Lockable {
         // Yield for the first reader to finish locking
         await yieldMicro();
       }
+      let released = false;
       return [
         async () => {
+          if (released) return;
+          released = true;
           readersRelease = await this.readersLock.acquire();
           const readerCount = --this._readerCount;
           // The last reader unlocks
@@ -109,8 +112,11 @@ class RWLockReader implements Lockable {
         --this._writerCount;
         throw e;
       }
+      let released = false;
       return [
         async () => {
+          if (released) return;
+          released = true;
           release();
           --this._writerCount;
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54

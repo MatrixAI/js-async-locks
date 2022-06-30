@@ -24,8 +24,11 @@ class Lock implements Lockable {
         --this._count;
         throw e;
       }
+      let released = false;
       return [
         async () => {
+          if (released) return;
+          released = true;
           --this._count;
           release();
           // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54

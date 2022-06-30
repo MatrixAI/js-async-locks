@@ -476,4 +476,17 @@ describe(RWLockWriter.name, () => {
     await g.next();
     await lock.waitForUnlock(100);
   });
+  test('release is idempotent', async () => {
+    const lock = new RWLockWriter();
+    let lockAcquire = lock.lock('read');
+    let [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lock.readerCount).toBe(0);
+    lockAcquire = lock.lock('write');
+    [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lock.writerCount).toBe(0);
+  });
 });

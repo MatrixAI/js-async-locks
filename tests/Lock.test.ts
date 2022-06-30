@@ -212,4 +212,17 @@ describe(Lock.name, () => {
     await g.next();
     await lock.waitForUnlock(100);
   });
+  test('release is idempotent', async () => {
+    const lock = new Lock();
+    let lockAcquire = lock.lock();
+    let [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lock.count).toBe(0);
+    lockAcquire = lock.lock();
+    [lockRelease] = await lockAcquire();
+    await lockRelease();
+    await lockRelease();
+    expect(lock.count).toBe(0);
+  });
 });
