@@ -4,10 +4,9 @@ with pkgs;
 mkShell {
   nativeBuildInputs = [
     nodejs
-    nodePackages.node2nix
   ];
   shellHook = ''
-    echo 'Entering js-async-locks'
+    echo "Entering $(npm pkg get name)"
     set -o allexport
     . ./.env
     set +o allexport
@@ -17,9 +16,6 @@ mkShell {
 
     # Built executables and NPM executables
     export PATH="$(pwd)/dist/bin:$(npm bin):$PATH"
-
-    # Enables npm link
-    export npm_config_prefix=~/.npm
 
     npm install --ignore-scripts
 
