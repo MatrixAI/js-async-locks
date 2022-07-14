@@ -75,7 +75,9 @@ describe(Barrier.name, () => {
     const barrier = await Barrier.createBarrier(2);
     let called1 = false;
     const t1 = async () => {
-      await expect(barrier.wait(10)).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
+      await expect(barrier.wait(10)).rejects.toThrow(
+        errors.ErrorAsyncLocksTimeout,
+      );
       called1 = true;
     };
     const p1 = t1();
