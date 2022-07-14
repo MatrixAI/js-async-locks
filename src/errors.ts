@@ -13,8 +13,13 @@ class ErrorAsyncLocksLockBoxConflict<T> extends ErrorAsyncLocks<T> {
     'LockBox cannot lock same ID with different Lockable classes';
 }
 
+class ErrorAsyncLocksBarrierCount<T> extends ErrorAsyncLocks<T> {
+  static description = 'Barrier must be created with a count >= 0';
+}
+
 export {
   ErrorAsyncLocks,
   ErrorAsyncLocksTimeout,
   ErrorAsyncLocksLockBoxConflict,
+  ErrorAsyncLocksBarrierCount,
 };
