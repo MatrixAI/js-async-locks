@@ -22,7 +22,7 @@
   },
   "rules": {
     "linebreak-style": ["error", "unix"],
-    "no-empty": 0,
+    "no-empty": 1,
     "no-useless-catch": 1,
     "no-prototype-builtins": 1,
     "no-constant-condition": 0,
@@ -141,6 +141,10 @@
         "selector": "typeLike",
         "format": ["PascalCase"],
         "trailingUnderscore": "allowSingleOrDouble"
+      },
+      {
+        "selector": "enumMember",
+        "format": ["PascalCase", "UPPER_CASE"]
       },
       {
         "selector": "objectLiteralProperty",

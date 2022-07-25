@@ -144,6 +144,7 @@ describe(Lock.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
       (async () => {
@@ -154,6 +155,7 @@ describe(Lock.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
     ]);
