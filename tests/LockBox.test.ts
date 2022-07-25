@@ -173,6 +173,7 @@ describe(LockBox.name, () => {
           },
         );
         for await (const _ of g) {
+          // Noop
         }
       })(),
       (async () => {
@@ -186,6 +187,7 @@ describe(LockBox.name, () => {
           },
         );
         for await (const _ of g) {
+          // Noop
         }
       })(),
     ]);
@@ -327,10 +329,12 @@ describe(LockBox.name, () => {
     await Promise.all([
       (async () => {
         for await (const _ of g1) {
+          // Noop
         }
       })(),
       (async () => {
         for await (const _ of g2) {
+          // Noop
         }
       })(),
     ]);

@@ -294,6 +294,7 @@ describe(RWLockReader.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
       (async () => {
@@ -304,6 +305,7 @@ describe(RWLockReader.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
     ]);
@@ -318,6 +320,7 @@ describe(RWLockReader.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
       (async () => {
@@ -328,6 +331,7 @@ describe(RWLockReader.name, () => {
           return 'last';
         });
         for await (const _ of g) {
+          // Noop
         }
       })(),
     ]);
