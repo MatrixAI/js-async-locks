@@ -17,9 +17,14 @@ class ErrorAsyncLocksBarrierCount<T> extends ErrorAsyncLocks<T> {
   static description = 'Barrier must be created with a count >= 0';
 }
 
+class ErrorAsyncLocksSemaphoreLimit<T> extends ErrorAsyncLocks<T> {
+  static description = 'Semaphore must be created with a limit >= 1';
+}
+
 export {
   ErrorAsyncLocks,
   ErrorAsyncLocksTimeout,
   ErrorAsyncLocksLockBoxConflict,
   ErrorAsyncLocksBarrierCount,
+  ErrorAsyncLocksSemaphoreLimit,
 };
