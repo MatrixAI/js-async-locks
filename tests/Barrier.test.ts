@@ -1,12 +1,10 @@
 import Barrier from '@/Barrier';
-import * as utils from '@/utils';
 import * as errors from '@/errors';
+import * as testsUtils from './utils';
 
 describe(Barrier.name, () => {
   test('barrier only takes count >= 0', async () => {
-    await expect(Barrier.createBarrier(-1)).rejects.toThrow(
-      errors.ErrorAsyncLocksBarrierCount,
-    );
+    await expect(Barrier.createBarrier(-1)).rejects.toThrow(RangeError);
   });
   test('barrier blocks until concurrent count is reached', async () => {
     const barrier = await Barrier.createBarrier(3);
@@ -22,14 +20,14 @@ describe(Barrier.name, () => {
     };
     const p1 = t1();
     const p2 = t2();
-    await utils.sleep(1);
+    await testsUtils.sleep(1);
     expect(called1).toBe(false);
     expect(called2).toBe(false);
     await barrier.wait();
-    expect(called1).toBe(true);
-    expect(called2).toBe(true);
     const results = await Promise.allSettled([p1, p2]);
     expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    expect(called1).toBe(true);
+    expect(called2).toBe(true);
   });
   test('barrier does not block if concurrent count starts as 0', async () => {
     const barrier = await Barrier.createBarrier(0);
@@ -45,7 +43,7 @@ describe(Barrier.name, () => {
     };
     const p1 = t1();
     const p2 = t2();
-    await utils.sleep(1);
+    await testsUtils.sleep(1);
     expect(called1).toBe(true);
     expect(called2).toBe(true);
     const results = await Promise.allSettled([p1, p2]);
@@ -65,7 +63,7 @@ describe(Barrier.name, () => {
     };
     const p1 = t1();
     const p2 = t2();
-    await utils.sleep(1);
+    await testsUtils.sleep(1);
     expect(called1).toBe(true);
     expect(called2).toBe(true);
     const results = await Promise.allSettled([p1, p2]);
@@ -75,16 +73,16 @@ describe(Barrier.name, () => {
     const barrier = await Barrier.createBarrier(2);
     let called1 = false;
     const t1 = async () => {
-      await expect(barrier.wait(10)).rejects.toThrow(
+      await expect(barrier.wait({ timer: 10 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       called1 = true;
     };
     const p1 = t1();
     expect(called1).toBe(false);
-    await utils.sleep(5);
+    await testsUtils.sleep(5);
     expect(called1).toBe(false);
-    await utils.sleep(10);
+    await testsUtils.sleep(10);
     expect(called1).toBe(true);
     await p1;
   });

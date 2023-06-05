@@ -1,160 +1,20 @@
 import type { ResourceAcquire, ResourceRelease } from '@matrixai/resources';
 import type {
-  ToString,
+  ResourceAcquireCancellable,
   Lockable,
-  MultiLockRequest,
-  MultiLockAcquire,
-  MultiLockAcquired,
+  LockRequest,
+  LockAcquireCancellable,
+  LockAcquired,
+  ContextTimed,
+  ContextTimedInput,
 } from './types';
+import { PromiseCancellable } from '@matrixai/async-cancellable';
 import { withF, withG } from '@matrixai/resources';
-import { ErrorAsyncLocksLockBoxConflict } from './errors';
+import * as utils from './utils';
+import * as errors from './errors';
 
 class LockBox<L extends Lockable = Lockable> implements Lockable {
   protected _locks: Map<string, L> = new Map();
-
-  public lock(
-    ...requests: Array<MultiLockRequest<L>>
-  ): ResourceAcquire<LockBox<L>> {
-    return async () => {
-      // Convert to strings
-      // This creates a copy of the requests
-      let requests_: Array<[string, new () => L, ...Parameters<L['lock']>]> =
-        requests.map(([key, ...rest]) =>
-          typeof key === 'string' ? [key, ...rest] : [key.toString(), ...rest],
-        );
-      // Sort to ensure lock hierarchy
-      requests_.sort(([key1], [key2]) => {
-        // Deterministic string comparison according to 16-bit code units
-        if (key1 < key2) return -1;
-        if (key1 > key2) return 1;
-        return 0;
-      });
-      // Avoid duplicate locking
-      requests_ = requests_.filter(
-        ([key], i, arr) => i === 0 || key !== arr[i - 1][0],
-      );
-      const locks: Array<[string, ResourceRelease, L]> = [];
-      try {
-        for (const [key, LockConstructor, ...lockingParams] of requests_) {
-          let lock = this._locks.get(key);
-          if (lock == null) {
-            lock = new LockConstructor();
-            this._locks.set(key, lock);
-          } else {
-            // It is possible to swap the lock class, but only after the lock key is released
-            if (!(lock instanceof LockConstructor)) {
-              throw new ErrorAsyncLocksLockBoxConflict(
-                `Lock ${key} is already locked with class ${lock.constructor.name}, which conflicts with class ${LockConstructor.name}`,
-              );
-            }
-          }
-          const lockAcquire = lock.lock(...lockingParams);
-          const [lockRelease] = await lockAcquire();
-          locks.push([key, lockRelease, lock]);
-        }
-      } catch (e) {
-        // Release all intermediate locks in reverse order
-        locks.reverse();
-        for (const [key, lockRelease, lock] of locks) {
-          await lockRelease();
-          // If it is still locked, then it is held by a different context
-          // only delete if no contexts are locking the lock
-          if (!lock.isLocked()) {
-            this._locks.delete(key);
-          }
-        }
-        throw e;
-      }
-      let released = false;
-      return [
-        async () => {
-          if (released) return;
-          released = true;
-          // Release all locks in reverse order
-          locks.reverse();
-          for (const [key, lockRelease, lock] of locks) {
-            await lockRelease();
-            // If it is still locked, then it is held by a different context
-            // only delete if no contexts are locking the lock
-            if (!lock.isLocked()) {
-              this._locks.delete(key);
-            }
-          }
-        },
-        this,
-      ];
-    };
-  }
-
-  public lockMulti(
-    ...requests: Array<MultiLockRequest<L>>
-  ): Array<MultiLockAcquire<L>> {
-    // Convert to strings
-    // This creates a copy of the requests
-    let requests_: Array<
-      [string, ToString, new () => L, ...Parameters<L['lock']>]
-    > = requests.map(([key, ...rest]) =>
-      typeof key === 'string'
-        ? [key, key, ...rest]
-        : [key.toString(), key, ...rest],
-    );
-    // Sort to ensure lock hierarchy
-    requests_.sort(([key1], [key2]) => {
-      // Deterministic string comparison according to 16-bit code units
-      if (key1 < key2) return -1;
-      if (key1 > key2) return 1;
-      return 0;
-    });
-    // Avoid duplicate locking
-    requests_ = requests_.filter(
-      ([key], i, arr) => i === 0 || key !== arr[i - 1][0],
-    );
-    const lockAcquires: Array<MultiLockAcquire<L>> = [];
-    for (const [key, keyOrig, LockConstructor, ...lockingParams] of requests_) {
-      const lockAcquire: ResourceAcquire<L> = async () => {
-        let lock = this._locks.get(key);
-        let lockRelease: ResourceRelease;
-        try {
-          if (lock == null) {
-            lock = new LockConstructor();
-            this._locks.set(key, lock);
-          } else {
-            // It is possible to swap the lock class, but only after the lock key is released
-            if (!(lock instanceof LockConstructor)) {
-              throw new ErrorAsyncLocksLockBoxConflict(
-                `Lock ${key} is already locked with class ${lock.constructor.name}, which conflicts with class ${LockConstructor.name}`,
-              );
-            }
-          }
-          const lockAcquire = lock.lock(...lockingParams);
-          [lockRelease] = await lockAcquire();
-        } catch (e) {
-          // If it is still locked, then it is held by a different context
-          // only delete if no contexts are locking the lock
-          if (!lock!.isLocked()) {
-            this._locks.delete(key);
-          }
-          throw e;
-        }
-        let released = false;
-        return [
-          async () => {
-            if (released) return;
-            released = true;
-            await lockRelease();
-            // If it is still locked, then it is held by a different context
-            // only delete if no contexts are locking the lock
-            if (!lock!.isLocked()) {
-              this._locks.delete(key);
-            }
-          },
-          lock,
-        ];
-      };
-      lockAcquires.push([keyOrig, lockAcquire, ...lockingParams]);
-    }
-    return lockAcquires;
-  }
 
   get locks(): ReadonlyMap<string, L> {
     return this._locks;
@@ -168,63 +28,253 @@ class LockBox<L extends Lockable = Lockable> implements Lockable {
     return count;
   }
 
-  public isLocked(
-    key?: ToString,
-    ...params: Parameters<L['isLocked']>
-  ): boolean {
+  public isLocked(key?: string, ...params: Parameters<L['isLocked']>): boolean {
     if (key == null) {
       for (const lock of this._locks.values()) {
         if (lock.isLocked(...params)) return true;
       }
       return false;
     } else {
-      const lock = this._locks.get(key.toString());
+      const lock = this._locks.get(key);
       if (lock == null) return false;
       return lock.isLocked(...params);
     }
   }
 
-  public async waitForUnlock(timeout?: number, key?: ToString): Promise<void> {
+  public lock(
+    ...params:
+      | [...requests: Array<LockRequest<L>>, ctx: Partial<ContextTimedInput>]
+      | [...requests: Array<LockRequest<L>>]
+      | [ctx?: Partial<ContextTimedInput>]
+  ): ResourceAcquireCancellable<LockBox<L>> {
+    let ctx = (
+      !Array.isArray(params[params.length - 1]) ? params.pop() : undefined
+    ) as Partial<ContextTimedInput> | undefined;
+    ctx = ctx != null ? { ...ctx } : {};
+    const requests = params as Array<LockRequest<L>>;
+    return () => {
+      return utils.setupTimedCancellable(
+        async (ctx: ContextTimed) => {
+          // This creates a copy of the requests
+          let requests_ = [...requests];
+          // Sort to ensure lock hierarchy
+          requests_.sort(([key1], [key2]) => {
+            // Deterministic string comparison according to 16-bit code units
+            if (key1 < key2) return -1;
+            if (key1 > key2) return 1;
+            return 0;
+          });
+          // Avoid duplicate locking
+          requests_ = requests_.filter(
+            ([key], i, arr) => i === 0 || key !== arr[i - 1][0],
+          );
+          const locks: Array<[string, ResourceRelease, L]> = [];
+          try {
+            for (const [key, LockConstructor, ...lockingParams] of requests_) {
+              let lock = this._locks.get(key);
+              if (lock == null) {
+                lock = new LockConstructor();
+                this._locks.set(key, lock);
+              } else {
+                // It is possible to swap the lock class, but only after the lock key is released
+                if (!(lock instanceof LockConstructor)) {
+                  throw new errors.ErrorAsyncLocksLockBoxConflict(
+                    `Lock ${key} is already locked with class ${lock.constructor.name}, which conflicts with class ${LockConstructor.name}`,
+                  );
+                }
+              }
+              const lockAcquire = lock.lock(...lockingParams, ctx);
+              const lockAcquireP = lockAcquire();
+              const [lockRelease] = await lockAcquireP;
+              locks.push([key, lockRelease, lock]);
+            }
+          } catch (e) {
+            // Release all intermediate locks in reverse order
+            locks.reverse();
+            for (const [key, lockRelease, lock] of locks) {
+              await lockRelease();
+              // If it is still locked, then it is held by a different context
+              // only delete if no contexts are locking the lock
+              if (!lock.isLocked()) {
+                this._locks.delete(key);
+              }
+            }
+            throw e;
+          }
+          let released = false;
+          return [
+            async () => {
+              if (released) return;
+              released = true;
+              // Release all locks in reverse order
+              locks.reverse();
+              for (const [key, lockRelease, lock] of locks) {
+                await lockRelease();
+                // If it is still locked, then it is held by a different context
+                // only delete if no contexts are locking the lock
+                if (!lock.isLocked()) {
+                  this._locks.delete(key);
+                }
+              }
+            },
+            this,
+          ] as const;
+        },
+        true,
+        Infinity,
+        errors.ErrorAsyncLocksTimeout,
+        ctx!,
+        [],
+      );
+    };
+  }
+
+  public lockMulti(
+    ...requests: Array<LockRequest<L>>
+  ): Array<LockAcquireCancellable<L>> {
+    // This creates a copy of the requests
+    let requests_ = [...requests];
+    // Sort to ensure lock hierarchy
+    requests_.sort(([key1], [key2]) => {
+      // Deterministic string comparison according to 16-bit code units
+      if (key1 < key2) return -1;
+      if (key1 > key2) return 1;
+      return 0;
+    });
+    // Avoid duplicate locking
+    requests_ = requests_.filter(
+      ([key], i, arr) => i === 0 || key !== arr[i - 1][0],
+    );
+    const lockAcquires: Array<LockAcquireCancellable<L>> = [];
+    for (const [key, LockConstructor, ...lockingParams] of requests_) {
+      const lockAcquire: ResourceAcquireCancellable<L> = () => {
+        let currentP: PromiseCancellable<any>;
+        const f = async () => {
+          let lock = this._locks.get(key);
+          let lockRelease: ResourceRelease;
+          try {
+            if (lock == null) {
+              lock = new LockConstructor();
+              this._locks.set(key, lock);
+            } else {
+              // It is possible to swap the lock class, but only after the lock key is released
+              if (!(lock instanceof LockConstructor)) {
+                throw new errors.ErrorAsyncLocksLockBoxConflict(
+                  `Lock ${key} is already locked with class ${lock.constructor.name}, which conflicts with class ${LockConstructor.name}`,
+                );
+              }
+            }
+            const lockAcquire = lock.lock(...lockingParams);
+            const lockAcquireP = lockAcquire();
+            currentP = lockAcquireP;
+            [lockRelease] = await lockAcquireP;
+          } catch (e) {
+            // If it is still locked, then it is held by a different context
+            // only delete if no contexts are locking the lock
+            if (!lock!.isLocked()) {
+              this._locks.delete(key);
+            }
+            throw e;
+          }
+          let released = false;
+          return [
+            async () => {
+              if (released) return;
+              released = true;
+              await lockRelease();
+              // If it is still locked, then it is held by a different context
+              // only delete if no contexts are locking the lock
+              if (!lock!.isLocked()) {
+                this._locks.delete(key);
+              }
+            },
+            lock,
+          ] as const;
+        };
+        return PromiseCancellable.from(f(), (signal) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              currentP.cancel(signal.reason);
+            },
+            { once: true },
+          );
+        });
+      };
+      lockAcquires.push([key, lockAcquire, ...lockingParams]);
+    }
+    return lockAcquires;
+  }
+
+  public waitForUnlock(
+    ...params:
+      | [key?: string, ctx?: Partial<ContextTimedInput>]
+      | [key?: string]
+      | [ctx?: Partial<ContextTimedInput>]
+      | []
+  ): PromiseCancellable<void> {
+    const key =
+      params.length === 2
+        ? params[0]
+        : typeof params[0] === 'string'
+        ? params[0]
+        : undefined;
+    const ctx =
+      params.length === 2
+        ? params[1]
+        : typeof params[0] !== 'string'
+        ? params[0]
+        : undefined;
     if (key == null) {
-      const ps: Array<Promise<void>> = [];
+      const waitPs: Array<PromiseCancellable<void>> = [];
       for (const lock of this._locks.values()) {
-        ps.push(lock.waitForUnlock(timeout));
+        waitPs.push(lock.waitForUnlock(ctx));
       }
-      await Promise.all(ps);
+      const waitP = Promise.all(waitPs).then(() => {});
+      return PromiseCancellable.from(waitP, (signal) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            waitPs.reverse();
+            for (const waitP of waitPs) {
+              waitP.cancel(signal.reason);
+            }
+          },
+          { once: true },
+        );
+      });
     } else {
-      const lock = this._locks.get(key.toString());
-      if (lock == null) return;
-      await lock.waitForUnlock(timeout);
+      const lock = this._locks.get(key);
+      if (lock == null) return PromiseCancellable.resolve();
+      return lock.waitForUnlock(ctx);
     }
   }
 
-  public async withF<T>(
+  public withF<T>(
     ...params: [
-      ...requests: Array<MultiLockRequest<L>>,
-      f: (lockBox: LockBox<L>) => Promise<T>,
+      ...(
+        | [...requests: Array<LockRequest<L>>, ctx: Partial<ContextTimedInput>]
+        | [...requests: Array<LockRequest<L>>]
+        | [ctx?: Partial<ContextTimedInput>]
+      ),
+      (lockBox: LockBox<L>) => Promise<T>,
     ]
   ): Promise<T> {
     const f = params.pop() as (lockBox: LockBox<L>) => Promise<T>;
-    return withF(
-      [this.lock(...(params as Array<MultiLockRequest<L>>))],
-      ([lockBox]) => f(lockBox),
-    );
+    return withF([this.lock(...(params as any))], ([lockBox]) => f(lockBox));
   }
 
-  public async withMultiF<T>(
+  public withMultiF<T>(
     ...params: [
-      ...requests: Array<MultiLockRequest<L>>,
-      f: (multiLocks: Array<MultiLockAcquired<L>>) => Promise<T>,
+      ...requests: Array<LockRequest<L>>,
+      f: (multiLocks: Array<LockAcquired<L>>) => Promise<T>,
     ]
   ): Promise<T> {
     const f = params.pop() as (
-      multiLocks: Array<MultiLockAcquired<L>>,
+      multiLocks: Array<LockAcquired<L>>,
     ) => Promise<T>;
-    const lockAcquires = this.lockMulti(
-      ...(params as Array<MultiLockRequest<L>>),
-    );
-
-    const lockAcquires_: Array<ResourceAcquire<MultiLockAcquired<L>>> =
+    const lockAcquires = this.lockMulti(...(params as Array<LockRequest<L>>));
+    const lockAcquires_: Array<ResourceAcquire<LockAcquired<L>>> =
       lockAcquires.map(
         ([key, lockAcquire, ...lockingParams]) =>
           (...r) =>
@@ -232,7 +282,7 @@ class LockBox<L extends Lockable = Lockable> implements Lockable {
               ([lockRelease, lock]) =>
                 [lockRelease, [key, lock, ...lockingParams]] as [
                   ResourceRelease,
-                  MultiLockAcquired<L>,
+                  LockAcquired<L>,
                 ],
             ),
       );
@@ -241,34 +291,33 @@ class LockBox<L extends Lockable = Lockable> implements Lockable {
 
   public withG<T, TReturn, TNext>(
     ...params: [
-      ...requests: Array<MultiLockRequest<L>>,
-      g: (lockBox: LockBox<L>) => AsyncGenerator<T, TReturn, TNext>,
+      ...(
+        | [...requests: Array<LockRequest<L>>, ctx: Partial<ContextTimedInput>]
+        | [...requests: Array<LockRequest<L>>]
+        | [ctx?: Partial<ContextTimedInput>]
+      ),
+      (lockBox: LockBox<L>) => AsyncGenerator<T, TReturn, TNext>,
     ]
   ): AsyncGenerator<T, TReturn, TNext> {
     const g = params.pop() as (
       lockBox: LockBox<L>,
     ) => AsyncGenerator<T, TReturn, TNext>;
-    return withG(
-      [this.lock(...(params as Array<MultiLockRequest<L>>))],
-      ([lockBox]) => g(lockBox),
-    );
+    return withG([this.lock(...(params as any))], ([lockBox]) => g(lockBox));
   }
 
   public withMultiG<T, TReturn, TNext>(
     ...params: [
-      ...requests: Array<MultiLockRequest<L>>,
+      ...requests: Array<LockRequest<L>>,
       g: (
-        multiLocks: Array<MultiLockAcquired<L>>,
+        multiLocks: Array<LockAcquired<L>>,
       ) => AsyncGenerator<T, TReturn, TNext>,
     ]
   ) {
     const g = params.pop() as (
-      multiLocks: Array<MultiLockAcquired<L>>,
+      multiLocks: Array<LockAcquired<L>>,
     ) => AsyncGenerator<T, TReturn, TNext>;
-    const lockAcquires = this.lockMulti(
-      ...(params as Array<MultiLockRequest<L>>),
-    );
-    const lockAcquires_: Array<ResourceAcquire<MultiLockAcquired<L>>> =
+    const lockAcquires = this.lockMulti(...(params as Array<LockRequest<L>>));
+    const lockAcquires_: Array<ResourceAcquire<LockAcquired<L>>> =
       lockAcquires.map(
         ([key, lockAcquire, ...lockingParams]) =>
           (...r) =>
@@ -276,7 +325,7 @@ class LockBox<L extends Lockable = Lockable> implements Lockable {
               ([lockRelease, lock]) =>
                 [lockRelease, [key, lock, ...lockingParams]] as [
                   ResourceRelease,
-                  MultiLockAcquired<L>,
+                  LockAcquired<L>,
                 ],
             ),
       );

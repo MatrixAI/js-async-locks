@@ -1,4 +1,6 @@
-import type { ResourceAcquire } from '@matrixai/resources';
+import type { PromiseCancellable } from '@matrixai/async-cancellable';
+import type { ResourceRelease } from '@matrixai/resources';
+import type { Timer } from '@matrixai/timer';
 
 /**
  * Plain data dictionary
@@ -6,46 +8,73 @@ import type { ResourceAcquire } from '@matrixai/resources';
 type POJO = { [key: string]: any };
 
 /**
- * Any type that can be turned into a string
+ * Deconstructed promise
  */
-interface ToString {
-  toString(): string;
-}
+type PromiseDeconstructed<T> = {
+  p: Promise<T>;
+  resolveP: (value: T | PromiseLike<T>) => void;
+  rejectP: (reason?: any) => void;
+};
+
+/**
+ * Derived from `ResourceAcquire`, this is just cancellable too
+ */
+type ResourceAcquireCancellable<Resource> = (
+  resources?: readonly any[],
+) => PromiseCancellable<readonly [ResourceRelease, Resource?]>;
 
 interface Lockable {
   count: number;
-  lock(...params: Array<unknown>): ResourceAcquire<Lockable>;
+  lock(...params: Array<unknown>): ResourceAcquireCancellable<Lockable>;
   isLocked(...params: Array<unknown>): boolean;
-  waitForUnlock(timeout?: number): Promise<void>;
+  waitForUnlock(...params: Array<unknown>): PromiseCancellable<void>;
   withF<T>(...params: Array<unknown>): Promise<T>;
   withG<T, TReturn, TNext>(
     ...params: Array<unknown>
   ): AsyncGenerator<T, TReturn, TNext>;
 }
 
-type MultiLockRequest<L extends Lockable = Lockable> = [
-  key: ToString,
+type LockRequest<L extends Lockable = Lockable> = [
+  key: string,
   lockConstructor: new () => L,
   ...lockingParams: Parameters<L['lock']>,
 ];
 
-type MultiLockAcquire<L extends Lockable = Lockable> = [
-  key: ToString,
-  lockAcquire: ResourceAcquire<L>,
+type LockAcquireCancellable<L extends Lockable = Lockable> = [
+  key: string,
+  lockAcquire: ResourceAcquireCancellable<L>,
   ...lockingParams: Parameters<L['lock']>,
 ];
 
-type MultiLockAcquired<L extends Lockable = Lockable> = [
-  key: ToString,
+type LockAcquired<L extends Lockable = Lockable> = [
+  key: string,
   lock: L,
   ...lockingParams: Parameters<L['lock']>,
 ];
 
+type RWLockRequest =
+  | [key: string, type?: 'read' | 'write', ctx?: Partial<ContextTimedInput>]
+  | [key: string, ctx?: Partial<ContextTimedInput>];
+
+type ContextTimed = {
+  signal: AbortSignal;
+  timer: Timer;
+};
+
+type ContextTimedInput = {
+  signal: AbortSignal;
+  timer: Timer | number;
+};
+
 export type {
   POJO,
-  ToString,
+  PromiseDeconstructed,
+  ResourceAcquireCancellable,
   Lockable,
-  MultiLockRequest,
-  MultiLockAcquire,
-  MultiLockAcquired,
+  LockRequest,
+  LockAcquireCancellable,
+  LockAcquired,
+  RWLockRequest,
+  ContextTimed,
+  ContextTimedInput,
 };

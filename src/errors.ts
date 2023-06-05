@@ -13,18 +13,26 @@ class ErrorAsyncLocksLockBoxConflict<T> extends ErrorAsyncLocks<T> {
     'LockBox cannot lock same ID with different Lockable classes';
 }
 
-class ErrorAsyncLocksBarrierCount<T> extends ErrorAsyncLocks<T> {
-  static description = 'Barrier must be created with a count >= 0';
+/**
+ * If you get this exception, this means within the same `Monitor` instance,
+ * you tried to lock a read on a key that is already locked for write, or
+ * you tried to lock a write on a key that is already locked for read. This
+ * is not supported because to do so would imply a lock upgrade from read to
+ * write or from write to read.
+ */
+class ErrorAsyncLocksMonitorLockType<T> extends ErrorAsyncLocks<T> {
+  static description =
+    'Monitor does not support upgrading or downgrading the lock type';
 }
 
-class ErrorAsyncLocksSemaphoreLimit<T> extends ErrorAsyncLocks<T> {
-  static description = 'Semaphore must be created with a limit >= 1';
+class ErrorAsyncLocksMonitorDeadlock<T> extends ErrorAsyncLocks<T> {
+  static description = 'Monitor has met a potential deadlock';
 }
 
 export {
   ErrorAsyncLocks,
   ErrorAsyncLocksTimeout,
   ErrorAsyncLocksLockBoxConflict,
-  ErrorAsyncLocksBarrierCount,
-  ErrorAsyncLocksSemaphoreLimit,
+  ErrorAsyncLocksMonitorLockType,
+  ErrorAsyncLocksMonitorDeadlock,
 };

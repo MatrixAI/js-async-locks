@@ -1,131 +1,30 @@
-import type { MutexInterface } from 'async-mutex';
-import type { ResourceAcquire } from '@matrixai/resources';
-import type { Lockable } from './types';
-import { Mutex, withTimeout } from 'async-mutex';
+import type { ResourceRelease } from '@matrixai/resources';
+import type {
+  ResourceAcquireCancellable,
+  Lockable,
+  ContextTimed,
+  ContextTimedInput,
+} from './types';
+import { PromiseCancellable } from '@matrixai/async-cancellable';
 import { withF, withG } from '@matrixai/resources';
-import { sleep, yieldMicro } from './utils';
-import { ErrorAsyncLocksTimeout } from './errors';
+import Lock from './Lock';
+import * as utils from './utils';
+import * as errors from './errors';
 
 /**
  * Read-preferring read write lock
  */
 class RWLockReader implements Lockable {
-  protected readersLock: Mutex = new Mutex();
-  protected writersLock: Mutex = new Mutex();
-  protected writersRelease: MutexInterface.Releaser;
+  protected readersLock: Lock = new Lock();
+  protected writersLock: Lock = new Lock();
+  protected writersRelease: ResourceRelease;
   protected readerCountBlocked: number = 0;
   protected _readerCount: number = 0;
   protected _writerCount: number = 0;
 
-  public lock(
-    type: 'read' | 'write' = 'write',
-    timeout?: number,
-  ): ResourceAcquire<RWLockReader> {
-    switch (type) {
-      case 'read':
-        return this.read(timeout);
-      case 'write':
-        return this.write(timeout);
-    }
-  }
-
-  public read(timeout?: number): ResourceAcquire<RWLockReader> {
-    return async () => {
-      const t1 = performance.now();
-      ++this.readerCountBlocked;
-      let readersLock: MutexInterface = this.readersLock;
-      if (timeout != null) {
-        readersLock = withTimeout(
-          this.readersLock,
-          timeout,
-          new ErrorAsyncLocksTimeout(),
-        );
-      }
-      let readersRelease: MutexInterface.Releaser;
-      try {
-        readersRelease = await readersLock.acquire();
-      } catch (e) {
-        --this.readerCountBlocked;
-        throw e;
-      }
-      --this.readerCountBlocked;
-      const readerCount = ++this._readerCount;
-      // The first reader locks
-      if (readerCount === 1) {
-        let writersLock: MutexInterface = this.writersLock;
-        if (timeout != null) {
-          timeout = timeout - (performance.now() - t1);
-          writersLock = withTimeout(
-            this.writersLock,
-            timeout,
-            new ErrorAsyncLocksTimeout(),
-          );
-        }
-        try {
-          this.writersRelease = await writersLock.acquire();
-        } catch (e) {
-          readersRelease();
-          --this._readerCount;
-          throw e;
-        }
-        readersRelease();
-      } else {
-        readersRelease();
-        // Yield for the first reader to finish locking
-        await yieldMicro();
-      }
-      let released = false;
-      return [
-        async () => {
-          if (released) return;
-          released = true;
-          readersRelease = await this.readersLock.acquire();
-          const readerCount = --this._readerCount;
-          // The last reader unlocks
-          if (readerCount === 0) {
-            this.writersRelease();
-          }
-          readersRelease();
-          // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
-          await yieldMicro();
-        },
-        this,
-      ];
-    };
-  }
-
-  public write(timeout?: number): ResourceAcquire<RWLockReader> {
-    return async () => {
-      ++this._writerCount;
-      let writersLock: MutexInterface = this.writersLock;
-      if (timeout != null) {
-        writersLock = withTimeout(
-          this.writersLock,
-          timeout,
-          new ErrorAsyncLocksTimeout(),
-        );
-      }
-      let release: MutexInterface.Releaser;
-      try {
-        release = await writersLock.acquire();
-      } catch (e) {
-        --this._writerCount;
-        throw e;
-      }
-      let released = false;
-      return [
-        async () => {
-          if (released) return;
-          released = true;
-          release();
-          --this._writerCount;
-          // Allow semaphore to settle https://github.com/DirtyHairy/async-mutex/issues/54
-          await yieldMicro();
-        },
-        this,
-      ];
-    };
-  }
+  protected acquireWritersLockP: PromiseCancellable<
+    readonly [ResourceRelease, Lock?]
+  >;
 
   public get count(): number {
     return this.readerCount + this.writerCount;
@@ -143,44 +42,187 @@ class RWLockReader implements Lockable {
    * Check if locked
    * If passed `type`, it will also check that the active lock is of that type
    */
-  public isLocked(): boolean {
-    return this.readersLock.isLocked() || this.writersLock.isLocked();
-  }
-
-  public async waitForUnlock(timeout?: number): Promise<void> {
-    if (timeout != null) {
-      let timedOut = false;
-      await Promise.race([
-        Promise.all([
-          this.readersLock.waitForUnlock(),
-          this.writersLock.waitForUnlock(),
-        ]),
-        sleep(timeout).then(() => {
-          timedOut = true;
-        }),
-      ]);
-      if (timedOut) {
-        throw new ErrorAsyncLocksTimeout();
-      }
+  public isLocked(type?: 'read' | 'write'): boolean {
+    if (type === 'read') {
+      return this._readerCount > 0 || this.readersLock.isLocked();
+    } else if (type === 'write') {
+      return this._readerCount === 0 && this.writersLock.isLocked();
     } else {
-      await Promise.all([
-        this.readersLock.waitForUnlock(),
-        this.writersLock.waitForUnlock(),
-      ]);
+      return (
+        this._readerCount > 0 ||
+        this.readersLock.isLocked() ||
+        this.writersLock.isLocked()
+      );
     }
   }
 
-  public async withF<T>(
+  public lock(
+    ...params:
+      | [type?: 'read' | 'write', ctx?: Partial<ContextTimedInput>]
+      | [type?: 'read' | 'write']
+      | [ctx?: Partial<ContextTimedInput>]
+      | []
+  ): ResourceAcquireCancellable<RWLockReader> {
+    const type =
+      (params.length === 2
+        ? params[0]
+        : typeof params[0] === 'string'
+        ? params[0]
+        : undefined) ?? 'write';
+    const ctx =
+      params.length === 2
+        ? params[1]
+        : typeof params[0] !== 'string'
+        ? params[0]
+        : undefined;
+    switch (type) {
+      case 'read':
+        return this.read(ctx);
+      case 'write':
+        return this.write(ctx);
+    }
+  }
+
+  public read(
+    ctx?: Partial<ContextTimedInput>,
+  ): ResourceAcquireCancellable<RWLockReader> {
+    ctx = ctx != null ? { ...ctx } : {};
+    return () => {
+      return utils.setupTimedCancellable(
+        async (ctx: ContextTimed) => {
+          ++this.readerCountBlocked;
+          const acquireReadersLock = this.readersLock.lock(ctx);
+          const acquireReadersLockP = acquireReadersLock();
+          let readersRelease: ResourceRelease;
+          try {
+            [readersRelease] = await acquireReadersLockP;
+            --this.readerCountBlocked;
+          } catch (e) {
+            --this.readerCountBlocked;
+            throw e;
+          }
+          const readerCount = ++this._readerCount;
+          // The first reader locks
+          if (readerCount === 1) {
+            const acquireWritersLock = this.writersLock.lock(ctx);
+            this.acquireWritersLockP = acquireWritersLock();
+            try {
+              [this.writersRelease] = await this.acquireWritersLockP;
+              await readersRelease();
+            } catch (e) {
+              await readersRelease();
+              --this._readerCount;
+              throw e;
+            }
+          } else {
+            await readersRelease();
+            await this.acquireWritersLockP.catch(() => {});
+          }
+          let released = false;
+          return [
+            async () => {
+              if (released) return;
+              released = true;
+              [readersRelease] = await this.readersLock.lock()();
+              const readerCount = --this._readerCount;
+              // The last reader unlocks
+              if (readerCount === 0) {
+                await this.writersRelease();
+              }
+              await readersRelease();
+            },
+            this,
+          ] as const;
+        },
+        true,
+        Infinity,
+        errors.ErrorAsyncLocksTimeout,
+        ctx!,
+        [],
+      );
+    };
+  }
+
+  public write(
+    ctx?: Partial<ContextTimedInput>,
+  ): ResourceAcquireCancellable<RWLockReader> {
+    return () => {
+      ++this._writerCount;
+      const acquireWritersLock = this.writersLock.lock(ctx);
+      const acquireWritersLockP = acquireWritersLock();
+      return acquireWritersLockP.then(
+        ([release]) => {
+          let released = false;
+          return [
+            async () => {
+              if (released) return;
+              released = true;
+              await release();
+              --this._writerCount;
+            },
+            this,
+          ] as const;
+        },
+        (e) => {
+          --this._writerCount;
+          throw e;
+        },
+        (signal) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              acquireWritersLockP.cancel(signal.reason);
+            },
+            { once: true },
+          );
+        },
+      );
+    };
+  }
+
+  public waitForUnlock(
+    ctx?: Partial<ContextTimedInput>,
+  ): PromiseCancellable<void> {
+    const waitReadersLockP = this.readersLock.waitForUnlock(ctx);
+    const waitWritersLockP = this.writersLock.waitForUnlock(ctx);
+    return PromiseCancellable.all([waitReadersLockP, waitWritersLockP]).then(
+      () => {},
+      undefined,
+      (signal) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            waitReadersLockP.cancel(signal.reason);
+            waitWritersLockP.cancel(signal.reason);
+          },
+          { once: true },
+        );
+      },
+    );
+  }
+
+  public withF<T>(
     ...params: [
       ...(
-        | [type: 'read' | 'write', timeout: number]
-        | [type: 'read' | 'write']
+        | [type?: 'read' | 'write', ctx?: Partial<ContextTimedInput>]
+        | [type?: 'read' | 'write']
+        | [ctx?: Partial<ContextTimedInput>]
         | []
       ),
       (lock: RWLockReader) => Promise<T>,
     ]
   ): Promise<T> {
-    const type = params.shift() as 'read' | 'write';
+    let type: 'read' | 'write';
+    if (params.length === 2) {
+      type = params.shift() as 'read' | 'write';
+    } else {
+      if (typeof params[0] === 'string') {
+        type = params.shift() as 'read' | 'write';
+      } else if (typeof params[0] == null) {
+        params.shift();
+      }
+    }
+    type = type! ?? 'write';
     switch (type) {
       case 'read':
         return this.withReadF(...(params as any));
@@ -189,33 +231,48 @@ class RWLockReader implements Lockable {
     }
   }
 
-  public async withReadF<T>(
-    ...params: [...([timeout: number] | []), (lock: RWLockReader) => Promise<T>]
+  public withReadF<T>(
+    ...params: [
+      ...([ctx?: Partial<ContextTimedInput>] | []),
+      (lock: RWLockReader) => Promise<T>,
+    ]
   ): Promise<T> {
     const f = params.pop() as (lock: RWLockReader) => Promise<T>;
-    const timeout = params[0] as number;
-    return withF([this.read(timeout)], ([lock]) => f(lock));
+    return withF([this.read(...(params as any))], ([lock]) => f(lock));
   }
 
-  public async withWriteF<T>(
-    ...params: [...([timeout: number] | []), (lock: RWLockReader) => Promise<T>]
+  public withWriteF<T>(
+    ...params: [
+      ...([ctx?: Partial<ContextTimedInput>] | []),
+      (lock: RWLockReader) => Promise<T>,
+    ]
   ): Promise<T> {
     const f = params.pop() as (lock: RWLockReader) => Promise<T>;
-    const timeout = params[0] as number;
-    return withF([this.write(timeout)], ([lock]) => f(lock));
+    return withF([this.write(...(params as any))], ([lock]) => f(lock));
   }
 
   public withG<T, TReturn, TNext>(
     ...params: [
       ...(
-        | [type: 'read' | 'write', timeout: number]
-        | [type: 'read' | 'write']
+        | [type?: 'read' | 'write', ctx?: Partial<ContextTimedInput>]
+        | [type?: 'read' | 'write']
+        | [ctx?: Partial<ContextTimedInput>]
         | []
       ),
       (lock: RWLockReader) => AsyncGenerator<T, TReturn, TNext>,
     ]
   ): AsyncGenerator<T, TReturn, TNext> {
-    const type = params.shift() as 'read' | 'write';
+    let type: 'read' | 'write';
+    if (params.length === 2) {
+      type = params.shift() as 'read' | 'write';
+    } else {
+      if (typeof params[0] === 'string') {
+        type = params.shift() as 'read' | 'write';
+      } else if (typeof params[0] == null) {
+        params.shift();
+      }
+    }
+    type = type! ?? 'write';
     switch (type) {
       case 'read':
         return this.withReadG(...(params as any));
@@ -226,28 +283,26 @@ class RWLockReader implements Lockable {
 
   public withReadG<T, TReturn, TNext>(
     ...params: [
-      ...([timeout: number] | []),
+      ...([ctx?: Partial<ContextTimedInput>] | []),
       (lock: RWLockReader) => AsyncGenerator<T, TReturn, TNext>,
     ]
   ): AsyncGenerator<T, TReturn, TNext> {
     const g = params.pop() as (
       lock: RWLockReader,
     ) => AsyncGenerator<T, TReturn, TNext>;
-    const timeout = params[0] as number;
-    return withG([this.read(timeout)], ([lock]) => g(lock));
+    return withG([this.read(...(params as any))], ([lock]) => g(lock));
   }
 
   public withWriteG<T, TReturn, TNext>(
     ...params: [
-      ...([timeout: number] | []),
+      ...([ctx?: Partial<ContextTimedInput>] | []),
       (lock: RWLockReader) => AsyncGenerator<T, TReturn, TNext>,
     ]
   ): AsyncGenerator<T, TReturn, TNext> {
     const g = params.pop() as (
       lock: RWLockReader,
     ) => AsyncGenerator<T, TReturn, TNext>;
-    const timeout = params[0] as number;
-    return withG([this.write(timeout)], ([lock]) => g(lock));
+    return withG([this.write(...(params as any))], ([lock]) => g(lock));
   }
 }
 
