@@ -1,7 +1,7 @@
 import { withF, withG } from '@matrixai/resources';
 import Lock from '@/Lock';
-import * as utils from '@/utils';
 import * as errors from '@/errors';
+import * as testsUtils from './utils';
 
 describe(Lock.name, () => {
   test('withF', async () => {
@@ -97,7 +97,7 @@ describe(Lock.name, () => {
     let value;
     const p1 = withF([lock.lock()], async () => {
       value = 'p1';
-      await utils.sleep(100);
+      await testsUtils.sleep(100);
     });
     const p2 = lock.waitForUnlock().then(() => {
       value = 'p2';
@@ -124,12 +124,12 @@ describe(Lock.name, () => {
     await Promise.all([
       lock.withF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
       lock.withF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
     ]);
@@ -139,7 +139,7 @@ describe(Lock.name, () => {
       (async () => {
         const g = lock.withG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -150,7 +150,7 @@ describe(Lock.name, () => {
       (async () => {
         const g = lock.withG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -163,11 +163,11 @@ describe(Lock.name, () => {
   });
   test('timeout', async () => {
     const lock = new Lock();
-    await withF([lock.lock(0)], async ([lock]) => {
+    await withF([lock.lock({ timer: 0 })], async ([lock]) => {
       expect(lock.isLocked()).toBe(true);
       expect(lock.count).toBe(1);
       const f = jest.fn();
-      await expect(withF([lock.lock(100)], f)).rejects.toThrow(
+      await expect(withF([lock.lock({ timer: 100 })], f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
@@ -176,18 +176,18 @@ describe(Lock.name, () => {
     });
     expect(lock.isLocked()).toBe(false);
     expect(lock.count).toBe(0);
-    await lock.withF(100, async () => {
+    await lock.withF({ timer: 100 }, async () => {
       const f = jest.fn();
-      await expect(lock.withF(100, f)).rejects.toThrow(
+      await expect(lock.withF({ timer: 100 }, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
     });
-    const g = lock.withG(100, async function* () {
+    const g = lock.withG({ timer: 100 }, async function* () {
       expect(lock.isLocked()).toBe(true);
       expect(lock.count).toBe(1);
       const f = jest.fn();
-      const g = lock.withG(100, f);
+      const g = lock.withG({ timer: 100 }, f);
       await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
@@ -199,20 +199,20 @@ describe(Lock.name, () => {
   });
   test('timeout waiting for unlock', async () => {
     const lock = new Lock();
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
     await withF([lock.lock()], async ([lock]) => {
-      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+      await expect(lock.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
     const g = withG([lock.lock()], async function* ([lock]) {
-      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+      await expect(lock.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
     await g.next();
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
   });
   test('release is idempotent', async () => {
     const lock = new Lock();
@@ -226,5 +226,33 @@ describe(Lock.name, () => {
     await lockRelease();
     await lockRelease();
     expect(lock.count).toBe(0);
+  });
+  test('promise cancellation', async () => {
+    const lock = new Lock();
+    const [release] = await lock.lock()();
+    expect(lock.count).toBe(1);
+    const lockAcquire = lock.lock();
+    const lockAcquireP = lockAcquire();
+    expect(lock.count).toBe(2);
+    lockAcquireP.cancel(new Error('reason'));
+    await expect(lockAcquireP).rejects.toThrow('reason');
+    await release();
+    expect(lock.count).toBe(0);
+  });
+  test('abort lock', async () => {
+    const lock = new Lock();
+    const [release] = await lock.lock()();
+    const abc = new AbortController();
+    // Abort after 10ms
+    setTimeout(() => {
+      abc.abort();
+    }, 10);
+    // Wait for 100ms, but we will expect abortion
+    await expect(lock.lock({ signal: abc.signal, timer: 100 })()).rejects.toBe(
+      undefined,
+    );
+    await release();
+    expect(lock.count).toBe(0);
+    expect(lock.isLocked()).toBeFalse();
   });
 });

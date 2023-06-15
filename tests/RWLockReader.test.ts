@@ -1,12 +1,14 @@
 import { withF, withG } from '@matrixai/resources';
 import RWLockReader from '@/RWLockReader';
-import * as utils from '@/utils';
 import * as errors from '@/errors';
+import * as testsUtils from './utils';
 
 describe(RWLockReader.name, () => {
   test('withF', async () => {
     const lock = new RWLockReader();
     const p1 = withF([lock.read()], async ([lock]) => {
+      expect(lock.isLocked('read')).toBe(true);
+      expect(lock.isLocked('write')).toBe(false);
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
@@ -19,6 +21,8 @@ describe(RWLockReader.name, () => {
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
     const p2 = withF([lock.write()], async ([lock]) => {
+      expect(lock.isLocked('read')).toBe(false);
+      expect(lock.isLocked('write')).toBe(true);
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
@@ -177,10 +181,10 @@ describe(RWLockReader.name, () => {
     const lockWriter = lock.write();
     const [lockWriterRelease] = await lockWriter();
     const results = await Promise.allSettled([
-      lock.read(100)(),
-      lock.read(100)(),
-      lock.read(150)(),
-      lock.read(150)(),
+      lock.read({ timer: 100 })(),
+      lock.read({ timer: 100 })(),
+      lock.read({ timer: 150 })(),
+      lock.read({ timer: 150 })(),
     ]);
     expect(
       results.every(
@@ -210,7 +214,7 @@ describe(RWLockReader.name, () => {
     let value;
     const p1 = withF([lock.read()], async () => {
       value = 'p1';
-      await utils.sleep(100);
+      await testsUtils.sleep(100);
     });
     const p2 = lock.waitForUnlock().then(() => {
       value = 'p2';
@@ -224,7 +228,7 @@ describe(RWLockReader.name, () => {
     let value;
     const p1 = withF([lock.write()], async () => {
       value = 'p1';
-      await utils.sleep(100);
+      await testsUtils.sleep(100);
     });
     const p2 = lock.waitForUnlock().then(() => {
       value = 'p2';
@@ -260,12 +264,12 @@ describe(RWLockReader.name, () => {
     await Promise.all([
       lock.withReadF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
       lock.withReadF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
     ]);
@@ -274,12 +278,12 @@ describe(RWLockReader.name, () => {
     await Promise.all([
       lock.withWriteF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
       lock.withWriteF(async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
     ]);
@@ -289,7 +293,7 @@ describe(RWLockReader.name, () => {
       (async () => {
         const g = lock.withReadG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -300,7 +304,7 @@ describe(RWLockReader.name, () => {
       (async () => {
         const g = lock.withReadG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -315,7 +319,7 @@ describe(RWLockReader.name, () => {
       (async () => {
         const g = lock.withWriteG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -326,7 +330,7 @@ describe(RWLockReader.name, () => {
       (async () => {
         const g = lock.withWriteG(async function* (): AsyncGenerator {
           const value_ = value + 1;
-          await utils.sleep(100);
+          await testsUtils.sleep(100);
           value = value_;
           return 'last';
         });
@@ -349,7 +353,7 @@ describe(RWLockReader.name, () => {
     const p6 = lock.withWriteF(async () => {
       order.push('write2');
     });
-    await utils.sleep(0);
+    await testsUtils.sleep(0);
     const p1 = lock.withReadF(async () => {
       order.push('read1');
     });
@@ -381,12 +385,12 @@ describe(RWLockReader.name, () => {
   });
   test('timeout', async () => {
     const lock = new RWLockReader();
-    await withF([lock.read(0)], async ([lock]) => {
+    await withF([lock.read({ timer: 0 })], async ([lock]) => {
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       const f = jest.fn();
-      await expect(withF([lock.write(100)], f)).rejects.toThrow(
+      await expect(withF([lock.write({ timer: 100 })], f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
@@ -397,12 +401,12 @@ describe(RWLockReader.name, () => {
     expect(lock.isLocked()).toBe(false);
     expect(lock.readerCount).toBe(0);
     expect(lock.writerCount).toBe(0);
-    await withF([lock.write(0)], async ([lock]) => {
+    await withF([lock.write({ timer: 0 })], async ([lock]) => {
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       const f = jest.fn();
-      await expect(withF([lock.read(100)], f)).rejects.toThrow(
+      await expect(withF([lock.read({ timer: 100 })], f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
@@ -410,23 +414,23 @@ describe(RWLockReader.name, () => {
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
     });
-    await lock.withReadF(100, async () => {
+    await lock.withReadF({ timer: 100 }, async () => {
       const f = jest.fn();
-      await expect(lock.withWriteF(100, f)).rejects.toThrow(
+      await expect(lock.withWriteF({ timer: 100 }, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
     });
-    await lock.withWriteF(100, async () => {
+    await lock.withWriteF({ timer: 100 }, async () => {
       const f = jest.fn();
-      await expect(lock.withReadF(100, f)).rejects.toThrow(
+      await expect(lock.withReadF({ timer: 100 }, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
     });
-    await lock.withWriteF(100, async () => {
+    await lock.withWriteF({ timer: 100 }, async () => {
       const f = jest.fn();
-      await expect(lock.withWriteF(100, f)).rejects.toThrow(
+      await expect(lock.withWriteF({ timer: 100 }, f)).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
       expect(f).not.toBeCalled();
@@ -436,7 +440,7 @@ describe(RWLockReader.name, () => {
       expect(lock.readerCount).toBe(1);
       expect(lock.writerCount).toBe(0);
       const f = jest.fn();
-      const g = lock.withWriteG(100, f);
+      const g = lock.withWriteG({ timer: 100 }, f);
       await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
@@ -452,14 +456,14 @@ describe(RWLockReader.name, () => {
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       const f1 = jest.fn();
-      const g1 = lock.withReadG(100, f1);
+      const g1 = lock.withReadG({ timer: 100 }, f1);
       await expect(g1.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f1).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
       expect(lock.readerCount).toBe(0);
       expect(lock.writerCount).toBe(1);
       const f2 = jest.fn();
-      const g2 = lock.withWriteG(100, f2);
+      const g2 = lock.withWriteG({ timer: 100 }, f2);
       await expect(g2.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f2).not.toBeCalled();
       expect(lock.isLocked()).toBe(true);
@@ -473,20 +477,20 @@ describe(RWLockReader.name, () => {
   });
   test('timeout waiting for unlock', async () => {
     const lock = new RWLockReader();
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
     await withF([lock.read()], async ([lock]) => {
-      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+      await expect(lock.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
     const g = withG([lock.write()], async function* ([lock]) {
-      await expect(lock.waitForUnlock(100)).rejects.toThrow(
+      await expect(lock.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
     await g.next();
-    await lock.waitForUnlock(100);
+    await lock.waitForUnlock({ timer: 100 });
   });
   test('release is idempotent', async () => {
     const lock = new RWLockReader();
@@ -500,5 +504,57 @@ describe(RWLockReader.name, () => {
     await lockRelease();
     await lockRelease();
     expect(lock.writerCount).toBe(0);
+  });
+  test('promise cancellation for write then write', async () => {
+    const lock = new RWLockReader();
+    const [release] = await lock.lock()();
+    expect(lock.count).toBe(1);
+    const lockAcquire = lock.lock();
+    const lockAcquireP = lockAcquire();
+    expect(lock.count).toBe(2);
+    lockAcquireP.cancel(new Error('reason'));
+    await expect(lockAcquireP).rejects.toThrow('reason');
+    await release();
+    expect(lock.count).toBe(0);
+  });
+  test('promise cancellation for read then write', async () => {
+    const lock = new RWLockReader();
+    const [release] = await lock.lock('read')();
+    expect(lock.count).toBe(1);
+    const lockAcquire = lock.lock('write');
+    const lockAcquireP = lockAcquire();
+    expect(lock.count).toBe(2);
+    lockAcquireP.cancel(new Error('reason'));
+    await expect(lockAcquireP).rejects.toThrow('reason');
+    await release();
+    expect(lock.count).toBe(0);
+  });
+  test('promise cancellation for write then read', async () => {
+    const lock = new RWLockReader();
+    const [release] = await lock.lock('write')();
+    expect(lock.count).toBe(1);
+    const lockAcquire = lock.lock('read');
+    const lockAcquireP = lockAcquire();
+    expect(lock.count).toBe(2);
+    lockAcquireP.cancel(new Error('reason'));
+    await expect(lockAcquireP).rejects.toThrow('reason');
+    await release();
+    expect(lock.count).toBe(0);
+  });
+  test('abort lock', async () => {
+    const lock = new RWLockReader();
+    const [release] = await lock.lock()();
+    const abc = new AbortController();
+    // Abort after 10ms
+    setTimeout(() => {
+      abc.abort();
+    }, 10);
+    // Wait for 100ms, but we will expect abortion
+    await expect(
+      lock.lock(undefined, { signal: abc.signal, timer: 100 })(),
+    ).rejects.toBe(undefined);
+    await release();
+    expect(lock.count).toBe(0);
+    expect(lock.isLocked()).toBeFalse();
   });
 });

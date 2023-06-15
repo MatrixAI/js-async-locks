@@ -4,6 +4,7 @@ export { default as RWLockWriter } from './RWLockWriter';
 export { default as LockBox } from './LockBox';
 export { default as Barrier } from './Barrier';
 export { default as Semaphore } from './Semaphore';
+export { default as Monitor } from './Monitor';
 export * as utils from './utils';
 export * as errors from './errors';
 export * from './types';

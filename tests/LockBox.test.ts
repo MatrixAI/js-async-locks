@@ -1,12 +1,12 @@
 import type { ResourceRelease } from '@matrixai/resources';
-import type { MultiLockRequest } from '@/types';
+import type { LockRequest } from '@/types';
 import { withF, withG } from '@matrixai/resources';
 import LockBox from '@/LockBox';
 import Lock from '@/Lock';
 import RWLockReader from '@/RWLockReader';
 import RWLockWriter from '@/RWLockWriter';
-import * as utils from '@/utils';
 import * as errors from '@/errors';
+import * as testsUtils from './utils';
 
 describe(LockBox.name, () => {
   test('withF', async () => {
@@ -101,9 +101,9 @@ describe(LockBox.name, () => {
     let value;
     const p1 = withF([lockBox.lock(['1', Lock])], async () => {
       value = 'p1';
-      await utils.sleep(100);
+      await testsUtils.sleep(100);
     });
-    const p2 = lockBox.waitForUnlock(undefined, '1').then(() => {
+    const p2 = lockBox.waitForUnlock('1').then(() => {
       value = 'p2';
     });
     await p1;
@@ -114,10 +114,10 @@ describe(LockBox.name, () => {
     const lockBox = new LockBox();
     let value;
     const p1 = withF(
-      [lockBox.lock(['1', Lock], [2, RWLockWriter, 'write'])],
+      [lockBox.lock(['1', Lock], ['2', RWLockWriter, 'write'])],
       async () => {
         value = 'p1';
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
       },
     );
     const p2 = lockBox.waitForUnlock().then(() => {
@@ -131,9 +131,9 @@ describe(LockBox.name, () => {
     const lockBox = new LockBox();
     await expect(
       lockBox.withF(
-        [1, Lock],
-        [2, RWLockWriter, 'write'],
-        [3, RWLockReader, 'read'],
+        ['1', Lock],
+        ['2', RWLockWriter, 'write'],
+        ['3', RWLockReader, 'read'],
         async () => {
           expect(lockBox.isLocked()).toBe(true);
           expect(lockBox.count).toBe(3);
@@ -150,12 +150,12 @@ describe(LockBox.name, () => {
     await Promise.all([
       lockBox.withF(['somelock', Lock], async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
       lockBox.withF(['somelock', Lock], async () => {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
       }),
     ]);
@@ -167,7 +167,7 @@ describe(LockBox.name, () => {
           ['somelock', Lock],
           async function* (): AsyncGenerator {
             const value_ = value + 1;
-            await utils.sleep(100);
+            await testsUtils.sleep(100);
             value = value_;
             return 'last';
           },
@@ -181,7 +181,7 @@ describe(LockBox.name, () => {
           ['somelock', Lock],
           async function* (): AsyncGenerator {
             const value_ = value + 1;
-            await utils.sleep(100);
+            await testsUtils.sleep(100);
             value = value_;
             return 'last';
           },
@@ -195,31 +195,34 @@ describe(LockBox.name, () => {
   });
   test('timeout', async () => {
     const lockBox = new LockBox();
-    await withF([lockBox.lock([1, Lock, 0])], async ([lock]) => {
-      expect(lock.isLocked()).toBe(true);
-      expect(lock.count).toBe(1);
-      const f = jest.fn();
-      await expect(withF([lockBox.lock([1, Lock, 100])], f)).rejects.toThrow(
-        errors.ErrorAsyncLocksTimeout,
-      );
-      expect(f).not.toBeCalled();
-      expect(lock.isLocked()).toBe(true);
-      expect(lock.count).toBe(1);
-    });
+    await withF(
+      [lockBox.lock(['1', Lock], { timer: 0 })],
+      async ([lockBox]) => {
+        expect(lockBox.isLocked()).toBe(true);
+        expect(lockBox.count).toBe(1);
+        const f = jest.fn();
+        await expect(
+          withF([lockBox.lock(['1', Lock], { timer: 100 })], f),
+        ).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
+        expect(f).not.toBeCalled();
+        expect(lockBox.isLocked()).toBe(true);
+        expect(lockBox.count).toBe(1);
+      },
+    );
     expect(lockBox.isLocked()).toBe(false);
     expect(lockBox.count).toBe(0);
-    await lockBox.withF([1, Lock, 100], async () => {
+    await lockBox.withF(['1', Lock], { timer: 100 }, async () => {
       const f = jest.fn();
-      await expect(lockBox.withF([1, Lock, 100], f)).rejects.toThrow(
-        errors.ErrorAsyncLocksTimeout,
-      );
+      await expect(
+        lockBox.withF(['1', Lock], { timer: 100 }, f),
+      ).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
     });
-    const g = lockBox.withG([1, Lock, 100], async function* () {
+    const g = lockBox.withG(['1', Lock], { timer: 100 }, async function* () {
       expect(lockBox.isLocked()).toBe(true);
       expect(lockBox.count).toBe(1);
       const f = jest.fn();
-      const g = lockBox.withG([1, Lock, 100], f);
+      const g = lockBox.withG(['1', Lock], { timer: 100 }, f);
       await expect(g.next()).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
       expect(f).not.toBeCalled();
       expect(lockBox.isLocked()).toBe(true);
@@ -231,42 +234,42 @@ describe(LockBox.name, () => {
   });
   test('timeout waiting for unlock', async () => {
     const lockBox = new LockBox();
-    await lockBox.waitForUnlock(100);
-    await withF([lockBox.lock([1, Lock])], async ([lockBox]) => {
-      await lockBox.waitForUnlock(100, 2);
-      await expect(lockBox.waitForUnlock(100, 1)).rejects.toThrow(
+    await lockBox.waitForUnlock({ timer: 100 });
+    await withF([lockBox.lock(['1', Lock])], async ([lockBox]) => {
+      await lockBox.waitForUnlock('2', { timer: 100 });
+      await expect(lockBox.waitForUnlock('1', { timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
-      await expect(lockBox.waitForUnlock(100)).rejects.toThrow(
+      await expect(lockBox.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
-    await lockBox.waitForUnlock(100);
-    const g = withG([lockBox.lock([1, Lock])], async function* ([lockBox]) {
-      await lockBox.waitForUnlock(100, 2);
-      await expect(lockBox.waitForUnlock(100, 1)).rejects.toThrow(
+    await lockBox.waitForUnlock({ timer: 100 });
+    const g = withG([lockBox.lock(['1', Lock])], async function* ([lockBox]) {
+      await lockBox.waitForUnlock('2', { timer: 100 });
+      await expect(lockBox.waitForUnlock('1', { timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
-      await expect(lockBox.waitForUnlock(100)).rejects.toThrow(
+      await expect(lockBox.waitForUnlock({ timer: 100 })).rejects.toThrow(
         errors.ErrorAsyncLocksTimeout,
       );
     });
     await g.next();
-    await lockBox.waitForUnlock(100);
+    await lockBox.waitForUnlock({ timer: 100 });
   });
   test('multiple types of locks', async () => {
     const lockBox = new LockBox<Lock | RWLockReader | RWLockWriter>();
     await lockBox.withF(
-      [1, Lock],
-      [2, RWLockReader, 'write'],
-      [3, RWLockWriter, 'read'],
+      ['1', Lock],
+      ['2', RWLockReader, 'write'],
+      ['3', RWLockWriter, 'read'],
       async (lockBox) => {
-        expect(lockBox.isLocked(1)).toBe(true);
-        expect(lockBox.isLocked(2)).toBe(true);
-        expect(lockBox.isLocked(3)).toBe(true);
+        expect(lockBox.isLocked('1')).toBe(true);
+        expect(lockBox.isLocked('2')).toBe(true);
+        expect(lockBox.isLocked('3')).toBe(true);
         const f = jest.fn();
         await expect(
-          withF([lockBox.lock([1, Lock, 100], [2, Lock, 100])], f),
+          withF([lockBox.lock(['1', Lock], ['2', Lock], { timer: 100 })], f),
         ).rejects.toThrow(errors.ErrorAsyncLocksTimeout);
         expect(f).not.toBeCalled();
       },
@@ -274,16 +277,16 @@ describe(LockBox.name, () => {
   });
   test('cannot use different lock type on the same active key', async () => {
     const lockBox = new LockBox<Lock | RWLockReader | RWLockWriter>();
-    await lockBox.withF([3, Lock], async (lockBox) => {
+    await lockBox.withF(['3', Lock], async (lockBox) => {
       const f = jest.fn();
       await expect(
-        lockBox.withF([3, RWLockReader, 'write'], f),
+        lockBox.withF(['3', RWLockReader, 'write'], f),
       ).rejects.toThrow(errors.ErrorAsyncLocksLockBoxConflict);
       expect(f).not.toBeCalled();
     });
-    await lockBox.withF([3, RWLockReader, 'write'], async (lockBox) => {
+    await lockBox.withF(['3', RWLockReader, 'write'], async (lockBox) => {
       const f = jest.fn();
-      await expect(lockBox.withF([3, Lock], f)).rejects.toThrow(
+      await expect(lockBox.withF(['3', Lock], f)).rejects.toThrow(
         errors.ErrorAsyncLocksLockBoxConflict,
       );
       expect(f).not.toBeCalled();
@@ -293,16 +296,28 @@ describe(LockBox.name, () => {
     const lockBox = new LockBox<Lock | RWLockReader | RWLockWriter>();
     let value = 0;
     await Promise.all([
-      lockBox.withF([1, Lock], [2, Lock], [3, Lock], [4, Lock], async () => {
-        const value_ = value + 1;
-        await utils.sleep(100);
-        value = value_;
-      }),
-      lockBox.withF([4, Lock], [3, Lock], [2, Lock], [1, Lock], async () => {
-        const value_ = value + 1;
-        await utils.sleep(100);
-        value = value_;
-      }),
+      lockBox.withF(
+        ['1', Lock],
+        ['2', Lock],
+        ['3', Lock],
+        ['4', Lock],
+        async () => {
+          const value_ = value + 1;
+          await testsUtils.sleep(100);
+          value = value_;
+        },
+      ),
+      lockBox.withF(
+        ['4', Lock],
+        ['3', Lock],
+        ['2', Lock],
+        ['1', Lock],
+        async () => {
+          const value_ = value + 1;
+          await testsUtils.sleep(100);
+          value = value_;
+        },
+      ),
     ]);
     expect(value).toBe(2);
     value = 0;
@@ -311,7 +326,7 @@ describe(LockBox.name, () => {
       ['2', Lock],
       async function* (): AsyncGenerator {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
         return 'last';
       },
@@ -321,7 +336,7 @@ describe(LockBox.name, () => {
       ['1', Lock],
       async function* (): AsyncGenerator {
         const value_ = value + 1;
-        await utils.sleep(100);
+        await testsUtils.sleep(100);
         value = value_;
         return 'last';
       },
@@ -343,7 +358,7 @@ describe(LockBox.name, () => {
   test('can map keys to LockBox locks', async () => {
     const lockBox = new LockBox();
     const keys = ['1', '2', '3', '4'];
-    const locks: Array<MultiLockRequest<RWLockWriter>> = keys.map((key) => [
+    const locks: Array<LockRequest<RWLockWriter>> = keys.map((key) => [
       key,
       RWLockWriter,
       'write',
@@ -421,5 +436,33 @@ describe(LockBox.name, () => {
     expect(vv).toStrictEqual(['first', 'second']);
     expect(lockBox.isLocked('1')).toBe(false);
     expect(lockBox.isLocked('2')).toBe(false);
+  });
+  test('promise cancellation', async () => {
+    const lockBox = new LockBox();
+    const [release] = await lockBox.lock(['1', Lock])();
+    expect(lockBox.count).toBe(1);
+    const lockAcquire = lockBox.lock(['1', Lock]);
+    const lockAcquireP = lockAcquire();
+    expect(lockBox.count).toBe(2);
+    lockAcquireP.cancel(new Error('reason'));
+    await expect(lockAcquireP).rejects.toThrow('reason');
+    await release();
+    expect(lockBox.count).toBe(0);
+  });
+  test('abort lock', async () => {
+    const lockBox = new LockBox();
+    const [release] = await lockBox.lock(['1', Lock])();
+    const abc = new AbortController();
+    // Abort after 10ms
+    setTimeout(() => {
+      abc.abort();
+    }, 10);
+    // Wait for 100ms, but we will expect abortion
+    await expect(
+      lockBox.lock(['1', Lock], { signal: abc.signal, timer: 100 })(),
+    ).rejects.toBe(undefined);
+    await release();
+    expect(lockBox.count).toBe(0);
+    expect(lockBox.isLocked()).toBeFalse();
   });
 });

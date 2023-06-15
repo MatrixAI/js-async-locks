@@ -1,10 +1,11 @@
 import type { ResourceRelease } from '@matrixai/resources';
+import type { ContextTimedInput } from './types';
+import { PromiseCancellable } from '@matrixai/async-cancellable';
 import Lock from './Lock';
-import { ErrorAsyncLocksBarrierCount } from './errors';
 
 class Barrier {
   protected lock: Lock;
-  protected count: number;
+  protected _count: number;
   protected release: ResourceRelease;
 
   public static async createBarrier(count: number) {
@@ -15,22 +16,32 @@ class Barrier {
 
   protected constructor(count: number, lock: Lock, release: ResourceRelease) {
     if (count < 0) {
-      throw new ErrorAsyncLocksBarrierCount();
+      throw new RangeError(
+        'Barrier must be constructed with `count` >= than 0',
+      );
     }
     this.lock = lock;
     this.release = release;
-    this.count = count;
+    this._count = count;
   }
 
-  public async wait(timeout?: number): Promise<void> {
+  public get count(): number {
+    return this._count;
+  }
+
+  public async destroy() {
+    await this.release();
+  }
+
+  public wait(ctx?: Partial<ContextTimedInput>): PromiseCancellable<void> {
     if (!this.lock.isLocked()) {
-      return;
+      return PromiseCancellable.resolve();
     }
-    this.count = Math.max(this.count - 1, 0);
-    if (this.count === 0) {
-      await this.release();
+    this._count = Math.max(this._count - 1, 0);
+    if (this._count === 0) {
+      return PromiseCancellable.from(this.release());
     } else {
-      await this.lock.waitForUnlock(timeout);
+      return this.lock.waitForUnlock(ctx);
     }
   }
 }
