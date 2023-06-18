@@ -5,6 +5,18 @@ master:[![pipeline status](https://gitlab.com/MatrixAI/open-source/js-async-lock
 
 Asynchronous lock utilities.
 
+JavaScript exposes the ability to create interleaved execution of asynchronous
+operations. When this is done with shared state between asynchronous
+overlapping functions that perform partial state transitions, this can lead to
+race conditions or data corruption and clobbering, or just invalid pre-condition
+or post-condition behaviour.
+
+This library provides multiple synchronization constructs that allow one to
+precisely control concurrent operations. These constructs are intended for
+pessimistic concurrency control. If you can prefer to use optimistic concurrency
+control mechanisms. But that is outside the scope of this library. In many cases
+you cannot use optimistic methods, and thus you need this library.
+
 ## Installation
 
 ```sh
