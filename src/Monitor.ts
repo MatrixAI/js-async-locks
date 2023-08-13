@@ -1,17 +1,17 @@
 import type { ResourceRelease } from '@matrixai/resources';
-import type RWLockWriter from './RWLockWriter';
-import type RWLockReader from './RWLockReader';
-import type LockBox from './LockBox';
+import type RWLockWriter from './RWLockWriter.js';
+import type RWLockReader from './RWLockReader.js';
+import type LockBox from './LockBox.js';
 import type {
   ResourceAcquireCancellable,
   Lockable,
   LockRequest,
   RWLockRequest,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { PromiseCancellable } from '@matrixai/async-cancellable';
 import { withF, withG } from '@matrixai/resources';
-import * as errors from './errors';
+import * as errors from './errors.js';
 
 class Monitor<RWLock extends RWLockReader | RWLockWriter> implements Lockable {
   /**

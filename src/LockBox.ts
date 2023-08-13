@@ -7,11 +7,11 @@ import type {
   LockAcquired,
   ContextTimed,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { PromiseCancellable } from '@matrixai/async-cancellable';
 import { withF, withG } from '@matrixai/resources';
-import * as utils from './utils';
-import * as errors from './errors';
+import * as utils from './utils.js';
+import * as errors from './errors.js';
 
 class LockBox<L extends Lockable = Lockable> implements Lockable {
   protected _locks: Map<string, L> = new Map();

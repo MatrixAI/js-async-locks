@@ -3,9 +3,9 @@ import type {
   ResourceAcquireCancellable,
   Lockable,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { withF, withG } from '@matrixai/resources';
-import Semaphore from './Semaphore';
+import Semaphore from './Semaphore.js';
 
 class Lock implements Lockable {
   protected semaphore: Semaphore = new Semaphore(1);

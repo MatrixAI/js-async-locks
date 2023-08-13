@@ -1,10 +1,10 @@
-import type { RWLockRequest } from '@/types';
+import type { RWLockRequest } from '#types.js';
 import { withF, withG } from '@matrixai/resources';
-import RWLockWriter from '@/RWLockWriter';
-import LockBox from '@/LockBox';
-import Monitor from '@/Monitor';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import RWLockWriter from '#RWLockWriter.js';
+import LockBox from '#LockBox.js';
+import Monitor from '#Monitor.js';
+import * as errors from '#errors.js';
 
 describe(Monitor.name, () => {
   test('monitors can lock and unlock', async () => {

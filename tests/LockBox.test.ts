@@ -1,12 +1,12 @@
 import type { ResourceRelease } from '@matrixai/resources';
-import type { LockRequest } from '@/types';
+import type { LockRequest } from '#types.js';
 import { withF, withG } from '@matrixai/resources';
-import LockBox from '@/LockBox';
-import Lock from '@/Lock';
-import RWLockReader from '@/RWLockReader';
-import RWLockWriter from '@/RWLockWriter';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import LockBox from '#LockBox.js';
+import Lock from '#Lock.js';
+import RWLockReader from '#RWLockReader.js';
+import RWLockWriter from '#RWLockWriter.js';
+import * as errors from '#errors.js';
+import * as testsUtils from './utils.js';
 
 describe(LockBox.name, () => {
   test('withF', async () => {

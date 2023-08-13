@@ -1,7 +1,7 @@
 import { withF, withG } from '@matrixai/resources';
-import Lock from '@/Lock';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import Lock from '#Lock.js';
+import * as errors from '#errors.js';
 
 describe(Lock.name, () => {
   test('withF', async () => {

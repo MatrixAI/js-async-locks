@@ -4,12 +4,12 @@ import type {
   Lockable,
   ContextTimed,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { withF, withG } from '@matrixai/resources';
 import { PromiseCancellable } from '@matrixai/async-cancellable';
-import Lock from './Lock';
-import * as utils from './utils';
-import * as errors from './errors';
+import Lock from './Lock.js';
+import * as utils from './utils.js';
+import * as errors from './errors.js';
 
 /**
  * Write-preferring read write lock

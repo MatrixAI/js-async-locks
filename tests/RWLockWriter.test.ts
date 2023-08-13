@@ -1,7 +1,7 @@
 import { withF, withG } from '@matrixai/resources';
-import RWLockWriter from '@/RWLockWriter';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import RWLockWriter from '#RWLockWriter.js';
+import * as errors from '#errors.js';
 
 describe(RWLockWriter.name, () => {
   test('withF', async () => {

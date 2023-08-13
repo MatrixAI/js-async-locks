@@ -4,10 +4,10 @@ import type {
   Lockable,
   ContextTimed,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { withF, withG } from '@matrixai/resources';
-import * as utils from './utils';
-import * as errors from './errors';
+import * as utils from './utils.js';
+import * as errors from './errors.js';
 
 type Task = {
   task: () => void;

@@ -1,7 +1,7 @@
 import type { ResourceRelease } from '@matrixai/resources';
-import type { ContextTimedInput } from './types';
+import type { ContextTimedInput } from './types.js';
 import { PromiseCancellable } from '@matrixai/async-cancellable';
-import Lock from './Lock';
+import Lock from './Lock.js';
 
 class Barrier {
   protected lock: Lock;

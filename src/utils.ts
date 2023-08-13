@@ -2,7 +2,7 @@ import type {
   PromiseDeconstructed,
   ContextTimed,
   ContextTimedInput,
-} from './types';
+} from './types.js';
 import { PromiseCancellable } from '@matrixai/async-cancellable';
 import { Timer } from '@matrixai/timer';
 

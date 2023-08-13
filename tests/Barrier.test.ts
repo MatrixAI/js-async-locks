@@ -1,6 +1,6 @@
-import Barrier from '@/Barrier';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import Barrier from '#Barrier.js';
+import * as errors from '#errors.js';
 
 describe(Barrier.name, () => {
   test('barrier only takes count >= 0', async () => {

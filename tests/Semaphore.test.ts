@@ -1,8 +1,8 @@
 import type { ResourceRelease } from '@matrixai/resources';
 import { withF, withG } from '@matrixai/resources';
-import Semaphore from '@/Semaphore';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import Semaphore from '#Semaphore.js';
+import * as errors from '#errors.js';
 
 describe(Semaphore.name, () => {
   test('semaphore only takes limit >= 1', async () => {

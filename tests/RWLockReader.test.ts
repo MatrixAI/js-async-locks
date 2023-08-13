@@ -1,7 +1,7 @@
 import { withF, withG } from '@matrixai/resources';
-import RWLockReader from '@/RWLockReader';
-import * as errors from '@/errors';
-import * as testsUtils from './utils';
+import * as testsUtils from './utils.js';
+import RWLockReader from '#RWLockReader.js';
+import * as errors from '#errors.js';
 
 describe(RWLockReader.name, () => {
   test('withF', async () => {
